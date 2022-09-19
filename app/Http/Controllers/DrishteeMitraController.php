@@ -758,7 +758,7 @@ return response()->json(url($url),200);
                 $query->where('geography_id', $geography_id);
             });
         }
-        $dms = $dms->get()->take(10);
+        $dms = $dms->get();
         foreach ($dms as $value) {
             $value->geography_name = Geography::where('id','=',$value->geography_id)->first()->name;
         }
