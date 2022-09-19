@@ -33,6 +33,10 @@ class User extends Authenticatable implements JWTSubject
     protected $hidden = [
         'password'
     ];
+    protected $casts = [
+        'is_super_admin' => 'boolean',
+        'is_management' => 'boolean',
+    ];
 
     protected $dates = ['created_at','updated_at','deleted_at'];
 

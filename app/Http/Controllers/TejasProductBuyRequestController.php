@@ -143,7 +143,7 @@ class TejasProductBuyRequestController extends Controller
         $dm_geography = $dm->dmGeography;
         $users =  User::whereHas('userGeographies', function ($query) use ( $dm_geography) {
             $query->where('geography_id', '=', $dm_geography->geography_id);
-        })->where("is_super_admin",1)->get();
+        })->where("is_super_admin",true)->get();
         $template_id = 1207161761372278111;
         foreach ($users as $user) {
                 // Mail::to($user->email)->send(new TejasBuyFromDrishteeMail($user));

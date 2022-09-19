@@ -726,16 +726,23 @@ return response()->json(url($url),200);
     * do filter drishtee object name, email, mobile, geography
     */
     public function filterDrishtee(Request $request){
-        $dms = DrishteeMitra::orderBy('first_name')->with('dmProfile','dmDevice','dmGeography.geography','personAddedBy','addedBy');
+        //return $request;
         $geography_ids = $request['geography_ids'];
-        $dms->whereHas('dmGeography',function($query) use($geography_ids) {
-            $query->whereIn('geography_id', $geography_ids);
-        });
+        $dms = DrishteeMitra::select('drishtree_mitras.*','d_m_profiles.*','d_m_geographies.geography_id')
+            ->whereHas('dmGeography',function($query) use($geography_ids) {
+                $query->whereIn('geography_id', $geography_ids);
+            })
+            ->with('dmDevice')->withCount('personAddedBy')
+            ->join('d_m_profiles', 'drishtree_mitras.id', '=', 'd_m_profiles.dm_id')
+            ->join('d_m_geographies', 'drishtree_mitras.id', '=', 'd_m_geographies.dm_id')   
+            ->orderBy('drishtree_mitras.first_name');
+        //return $dms = DrishteeMitra::with('dmProfile','dmDevice','dmGeography.geography','personAddedBy')->get()->take(10);
+
 
         if(isset($request['filters']['name']) && !empty($request['filters']['name'])) 
         {
             $dms->where('first_name','like','%'.$request['filters']['name'].'%')
-            ->orWhere('last_name','like','%'.$request['filters']['name'].'%');
+                    ->orWhere('last_name','like','%'.$request['filters']['name'].'%');
         }
         if(isset($request['filters']['email']) && !empty($request['filters']['email'])) {
             $dms->where('email','like','%'.$request['filters']['email'].'%');
@@ -745,35 +752,17 @@ return response()->json(url($url),200);
             $dms->where('mobile','like','%'.$request['filters']['mobile'].'%');
 
         }
-        if(isset($request['filters']['added_by']) && !empty($request['filters']['added_by'])) {
-            $dms->where('added_by',$request['filters']['added_by']);
+        if(isset($request['filters']['geography_id']) && !empty($request['filters']['geography_id'])) {
+            $geography_id = $request['filters']['geography_id'];
+            $dms->whereHas('dmGeography',function($query) use($geography_id) {
+                $query->where('geography_id', $geography_id);
+            });
         }
-        if(isset($request['filters']['type']) && !empty($request['filters']['type'])) {
-            $dms->where('type',$request['filters']['type']);
-           
+        $dms = $dms->get()->take(10);
+        foreach ($dms as $value) {
+            $value->geography_name = Geography::where('id','=',$value->geography_id)->first()->name;
         }
-        if(isset($request['filters']['is_csp']) && (false ==$request['filters']['is_csp'] || 
-            true == $request['filters']['is_csp'])) {
-            $dms->where('is_csp', $request['filters']['is_csp']);
-    }
-    if(isset($request['filters']['is_vaani']) && (false ==$request['filters']['is_vaani'] || 
-        true == $request['filters']['is_vaani'])) {
-        $dms->where('is_csp', $request['filters']['is_vaani']);
-   }
-if(isset($request['filters']['geography_id']) && !empty($request['filters']['geography_id'])) {
-    $geography_id = $request['filters']['geography_id'];
-    $dms->whereHas('dmGeography',function($query) use($geography_id) {
-        $query->where('geography_id', $geography_id);
-    });
-}
-if(isset($request['count']) && $request['count']) {
-    $dmc = $dms->get();
-    return response()->json(count($dmc),200);
-}
-$offset = isset($request['skip']) ? $request['skip'] : 0 ;
-$chunk = isset($request['skip']) ? $request['limit'] : 999999;
-$dms = $dms->skip($offset)->limit($chunk)->get();
-return response()->json($dms,200);  
+        return response()->json($dms,200);  
 }
 
 public function index()
