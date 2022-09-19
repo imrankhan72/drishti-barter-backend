@@ -178,6 +178,7 @@ return [
         NotificationChannels\ExpoPushNotifications\ExpoPushNotificationsServiceProvider::class,
 
         LaravelFCM\FCMServiceProvider::class,
+        Matthewbdaly\LaravelAzureStorage\AzureStorageServiceProvider::class,
 
 
     ],

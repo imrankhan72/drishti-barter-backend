@@ -111,7 +111,8 @@ class TejasRequestBuyFromPeopleController extends Controller
         $person_ledger->save();
         // $dm_ledger->balance = $dm_ledger->balance + $dm_margin_lp;
         // $dm_ledger->save();
-        sendSMS("You have sold Tejas Products to DM. Your account has been credited ".$total_lp." LPs. You available account balance is ".$person_ledger->balance." LP.".$total_lp ,$person->mobile);
+        $template_id = 1207161761417922279; 
+        sendSMS("You have sold Tejas Products to DM. Your account has been credited ".$total_lp." LPs. You available account balance is ".$person_ledger->balance." LP.".$total_lp ,$person->mobile,$template_id);
         return response()->json(['buyfrompersonrequest'=>$trbfp,"products"=>$collection],200);
     }
     /**

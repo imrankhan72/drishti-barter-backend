@@ -41,7 +41,7 @@ class TejasRequestBuyFromPeople extends Model
      * @return true
      * do store Person Ledger transaction
      */
-    public function createTejasBuyLedgerTransactions($type,$ledger_id,$transaction_type,$amount,$note,$balance_after_transaction,$person_id)
+    public function createTejasBuyLedgerTransactions($type,$ledger_id,$transaction_type,$amount,$note,$balance_after_transaction,$person_id=null)
     {
      $ledger_tran = new LedgerTransaction();
       $ledger_tran->person_id = $person_id;
@@ -51,6 +51,7 @@ class TejasRequestBuyFromPeople extends Model
       $ledger_tran->transaction_note = $note;
       $ledger_tran->ledgerTransaction_type = $type;
       $ledger_tran->balance_after_transaction = $balance_after_transaction;
+      $ledger_tran->person_id = $person_id;
       // $log->user_id = $user->id;
       // $log->is_delete = $isdelete;
       $this->ledgerTransactions()->save($ledger_tran);

@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class DrishteeMitra extends Authenticatable implements JWTSubject
 {
   use SoftDeletes;
-    protected $fillable = ['first_name','middle_name','password','last_name','email','mobile','last_password_change','ledger_id','otp','user_type','is_mobile_onboarded','status','person_id','added_by','added_on','state_id','device_token','remote_id'];
+    protected $fillable = ['first_name','middle_name','password','last_name','email','mobile','last_password_change','ledger_id','otp','user_type','is_mobile_onboarded','status','person_id','added_by','added_on','state_id','device_token','remote_id','is_csp','is_vaani','type','code'];
 
     protected $dates = ['created_at','updated_at','deleted_at'];
 
@@ -70,6 +70,10 @@ class DrishteeMitra extends Authenticatable implements JWTSubject
         return $this->hasOne('App\DMDevice','dm_id');
 
     }
+    public function addedBy() 
+    {
+      return $this->belongsTo('App\User','added_by');
+    } 
     public function services()
     {
         return $this->hasMany('App\Service','added_by_user_id');
@@ -150,6 +154,10 @@ class DrishteeMitra extends Authenticatable implements JWTSubject
     {
         return $this->hasMany('App\PersonBan','requester_id');
         
+    }
+    public function vaccinations()
+    {
+      return $this->hasMany('App\Vaccination','added_by');
     }
     public static function getActiveMitra($data)
     {

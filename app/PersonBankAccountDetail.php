@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class PersonBankAccountDetail extends Model
 {
-     protected $fillable =['account_number','bank_name','ifsc_code','payee_name','person_id'];
+     protected $fillable =['account_number','bank_name','ifsc_code','payee_name','person_id','branch_name','branch_address'];
      protected $dates = ['created_at','updated_at'];
 
      public function person()

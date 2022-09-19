@@ -99,8 +99,8 @@ class PersonServiceController extends Controller
         $request['service_lp'] = $service_lp;
 
         $ps =$this->repository->create($request->all());
-
-        sendSMS('New service '.$ps->service->name.' with skill '.$request['skill_level'] .' has been added to your account by DM.',$person->mobile);
+        $template_id = 1207161761351644573;
+        sendSMS('New service '.$ps->service->name.' with skill '.$request['skill_level'] .' has been added to your account by DM.',$person->mobile,$template_id);
        return response()->json($ps->load('service','person','geography','drishteeMitra'),201);
        } 
        else {
@@ -176,7 +176,8 @@ class PersonServiceController extends Controller
         }
         $request['service_lp'] = $service_lp;
         $ps = $this->repository->update($request->all(),$id);
-        sendSMS('Service '.$ps->service->name.' with skill <skill> has been updated.',$person->mobile);
+        $template_id = 1207161761358111822;
+        sendSMS('Service '.$ps->service->name.' with skill <skill> has been updated.',$person->mobile,$template_id);
         return response()->json($ps->load('service','person','geography','drishteeMitra'),201);
 
     }

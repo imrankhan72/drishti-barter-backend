@@ -7,7 +7,7 @@ use App\LedgerTransaction;
 
 class TejasProductSellRequest extends Model
 {
-    protected $fillable = ['requester_id','request_date','status'];
+    protected $fillable = ['requester_id','request_date','status','approved_by'];
 
     protected $dates = ['created_at','updated_at'];
 
@@ -25,10 +25,15 @@ class TejasProductSellRequest extends Model
     {
       return $this->hasMany('App\SellRequestComment','sell_request_id');
     }
+    public function approvedByAdmin()
+    {
+      return $this->belongsTo('App\User','approved_by');
+    }
     public function ledgerTransactions()
     {
         return $this->morphMany(LedgerTransaction::class, 'ledgerTransaction');
     }
+
 
     /**
      *
@@ -41,7 +46,7 @@ class TejasProductSellRequest extends Model
      * @return true
      * do store DM Ledger transaction
      */
-    public function createTejasSellLedgerTransactions($type,$ledger_id,$transaction_type,$amount,$note,$balance_after_transaction)
+    public function createTejasSellLedgerTransactions($type,$ledger_id,$transaction_type,$amount,$note,$balance_after_transaction,$person_id=null)
     {
      $ledger_tran = new LedgerTransaction();
       // $ledger->ledger_id = $id;
@@ -51,6 +56,7 @@ class TejasProductSellRequest extends Model
       $ledger_tran->transaction_note = $note;
       $ledger_tran->ledgerTransaction_type = $type;
       $ledger_tran->balance_after_transaction = $balance_after_transaction;
+      $ledger_tran->person_id = $person_id;
       // $log->user_id = $user->id;
       // $log->is_delete = $isdelete;
       $this->ledgerTransactions()->save($ledger_tran);

@@ -62,8 +62,10 @@ class UserController extends Controller
         $ledger = Ledger::where('ledger_id',$user->id)->first();
         $user->ledger_id = $ledger->id;
         $user->save();
+        $template_id = 1207161761233797199;
+
         Mail::to($user->email)->send(new AdminCreateMail($user,$password));
-        sendSMS('Welcome to Miri Market Barter. Your admin account has been successfully created. Login here http://drishteeapp.cobold.xyz/ with email and Password.'.$request['email'].' '.$password,$user->mobile);
+        sendSMS('Welcome to Miri Market Barter. Your admin account has been successfully created. Login here http://drishteeapp.cobold.xyz/ with email and Password.'.$request['email'].' '.$password,$user->mobile,$template_id);
         return response()->json($user->load('userGeographies','userProducts'), 201);
     }
 
@@ -125,6 +127,59 @@ class UserController extends Controller
     public function index(){
         $users = User::orderBy('is_super_admin','DESC')->orderBy('first_name')->get();
         return response()->json($users->load('userGeographies.geography','userProducts.user','userProducts.product.units','ledger'),200);
+    }
+    public function filterUser(Request $request)
+    {
+      $users = User::orderBy('is_super_admin','DESC')->orderBy('first_name')->with('userGeographies.geography','userProducts.user','userProducts.product.units','ledger');
+        // $geography_ids = $request['geography_ids'];
+        // $dms->whereHas('dmGeography',function($query) use($geography_ids) {
+                // $query->whereIn('geography_id', $geography_ids);
+            // });
+
+        if(isset($request['filters']['first_name']) && !empty($request['filters']['first_name'])) 
+        {
+            $users->where('first_name','like','%'.$request['filters']['first_name'].'%');
+        }
+        if(isset($request['filters']['last_name']) && !empty($request['filters']['last_name'])) 
+        {
+            $users->where('last_name','like','%'.$request['filters']['last_name'].'%');
+        }
+
+        if(isset($request['filters']['email']) && !empty($request['filters']['email'])) {
+            $users->where('email','like','%'.$request['filters']['email'].'%');
+
+        }
+        if(isset($request['filters']['mobile']) && !empty($request['filters']['mobile'])) {
+            $users->where('mobile','like','%'.$request['filters']['mobile'].'%');
+
+        }
+        // if(isset($request['filters']['added_by']) && !empty($request['filters']['added_by'])) {
+        //     $dms->where('added_by',$request['filters']['added_by']);
+        // }
+        
+        // if(isset($request['filters']['is_csp']) && (false ==$request['filters']['is_csp'] || 
+        //     true == $request['filters']['is_csp'])) {
+        //     $dms->where('is_csp', $request['filters']['is_csp']);
+        // }
+        // if(isset($request['filters']['is_vaani']) && (false ==$request['filters']['is_vaani'] || 
+        //     true == $request['filters']['is_vaani'])) {
+        //     $dms->where('is_csp', $request['filters']['is_vaani']);
+        // }
+        // if(isset($request['filters']['geography_id']) && !empty($request['filters']['geography_id'])) {
+        //     $geography_id = $request['filters']['geography_id'];
+        //     $dms->whereHas('dmGeography',function($query) use($geography_id) {
+        //         $query->where('geography_id', $geography_id);
+        //     });
+        // }
+        if(isset($request['count']) && $request['count']) {
+            $us = $users->get();
+            return response()->json(count($us),200);
+        }
+        $offset = isset($request['skip']) ? $request['skip'] : 0 ;
+        $chunk = isset($request['skip']) ? $request['limit'] : 999999;
+        $usr = $users->skip($offset)->limit($chunk)->get();
+        
+        return response()->json($usr,200);
     }
     public function show($id)
     {
@@ -280,6 +335,7 @@ class UserController extends Controller
         }
 
         $user = $request->only(['first_name','last_name','email','mobile','is_super_admin','remote_id']);
+        Log::info("store user external".$request);
         $password = $request['password'];
         if(isset($request['password'])) {
             $request['password'] = Hash::make($request->password);
@@ -326,8 +382,9 @@ class UserController extends Controller
         $ledger = Ledger::where('ledger_id',$user->id)->first();
         $user->ledger_id = $ledger->id;
         $user->save();
-        Mail::to($user->email)->send(new AdminCreateMail($user,$password));
-        sendSMS('Welcome to Miri Market Barter. Your admin account has been successfully created. Login here http://drishteeapp.cobold.xyz/ with email and Password.'.$request['email'].' '.$password,$user->mobile);    
+        $template_id = 1207161761233797199;
+        //Mail::to($user->email)->send(new AdminCreateMail($user,$password));
+        sendSMS('Welcome to Miri Market Barter. Your admin account has been successfully created. Login here http://drishteeapp.cobold.xyz/ with email and Password.'.$request['email'].' '.$password,$user->mobile,$template_id);    
         }
         
         // if($request['geographies']) {
@@ -350,6 +407,40 @@ class UserController extends Controller
         // return response()->json($user->load('DmGeography','userGeographies','sellRequestComments','buyRequestComments','lpRequestFromAdmin','approvedBySuperAdmin','personBans'),200);
 
         if($user && !$user->is_super_admin) {
+            $dmgeo = $user->DmGeography;
+            $ugeo = $user->userGeographies;
+            $src = $user->sellRequestComments;
+            $brc = $user->buyRequestComments;
+            $lrfa = $user->lpRequestFromAdmin;
+            $absa = $user->approvedBySuperAdmin;
+            if(count($dmgeo) > 0 || count($src) > 0 || count($brc) > 0 || count($lrfa) > 0 || count($absa) > 0) {
+                return response()->json(['error'=>'you can not delete this User'],400);
+            }else{
+                $user->destroy($id);
+                return response()->json(true,200);
+            }
+        }else{
+            return response()->json(['error'=>'User Not Found Or This user is super admin'],404);
+        }
+    }
+
+
+    public function deleteUserExternal(Request $request)
+    {
+       $validation = Validator::make($request->all(),[
+           'email'  => 'required|exists:users,email',
+           'mobile' => 'required|exists:users,mobile'
+       ]);
+       if($validation->fails()) {
+        $errors = $validation->errors();
+        return response()->json($errors,401);
+       }
+       $checktoken = $request->header('checktoken');
+        if($checktoken != '0fQgVCL1cM2mGytOSovz') {
+           return response()->json('Token Invalid',402);
+        }
+        $user = User::where('email',$request['email'])->where('mobile',$request['mobile'])->first();
+       if($user && !$user->is_super_admin) {
             $dmgeo = $user->DmGeography;
             $ugeo = $user->userGeographies;
             $src = $user->sellRequestComments;

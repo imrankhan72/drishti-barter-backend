@@ -14,7 +14,8 @@ use App\DrishteeMitra;
 use App\Ledger;
 use Auth;
 use App\UserProduct;
-
+use App\UserProductLog;
+use Log;
 class TejasProductSellRequestController extends Controller
 {
     /**
@@ -64,7 +65,7 @@ class TejasProductSellRequestController extends Controller
      */
     public function getSellRequestList($dm_id){
         $tpsrs = TejasProductSellRequest::where('requester_id',$dm_id)->get();
-        return response()->json($tpsrs->load('sellRequestProducts.product.units','sellRequestComments'),200);
+        return response()->json($tpsrs->load('sellRequestProducts.product.units','sellRequestComments','approvedByAdmin'),200);
     }
 
     /** 
@@ -74,7 +75,7 @@ class TejasProductSellRequestController extends Controller
      */
     public function getSellRequestListAdmin(){
         $sellRequests = TejasProductSellRequest::orderBy('request_date','DESC')->get();
-        return response()->json($sellRequests->load('sellRequestProducts.product.units','dm.dmProfile','sellRequestComments'));
+        return response()->json($sellRequests->load('sellRequestProducts.product.units','dm.dmProfile','sellRequestComments','approvedByAdmin'));
     }
 
      /**
@@ -86,7 +87,7 @@ class TejasProductSellRequestController extends Controller
      */
     public function getSellRequest($requester_id, $request_id){
         $tpsr = TejasProductSellRequest::find($request_id);
-        return response()->json($tpsr->load('sellRequestProducts.product.units','sellRequestComments'),200);
+        return response()->json($tpsr->load('sellRequestProducts.product.units','sellRequestComments','approvedBy'),200);
     }
 
     /**
@@ -108,9 +109,12 @@ class TejasProductSellRequestController extends Controller
         if($request['status'] == 'Accepted') {
             $user = Auth::User();
             $sellRequest = TejasProductSellRequest::find($request_id);
+
             if($sellRequest->status == 'Accepted'){
                 return response()->json(["error"=>"Status Already Accepted"],404);
             }
+            $sellRequest->approved_by = $user->id;
+            $sellRequest->save();
             $dm = DrishteeMitra::find($sellRequest->requester_id);
             $ledger =  Ledger::find($dm->ledger_id);
             $user_ledger = Ledger::find($user->ledger_id);
@@ -131,15 +135,32 @@ class TejasProductSellRequestController extends Controller
                     $data['product_id'] = $key->product_id;
                     $data['quantity_available'] = $key->quantity;
                     $data['product_lp'] = $key->lp_applicable / $key->quantity; 
-                    $usp = UserProduct::create($data);  
+                    $usp = UserProduct::create($data);
+                    $usp->tag = 'From Tejas Sell Request';
+                    $usp->save(); 
+                    $temp['user_product_id'] = $usp->id;
+                    $temp['product_id'] = $usp->product_id;
+                    $temp['quantity'] = $usp->quantity_available;
+                    $temp['product_lp'] = $usp->product_lp;
+                    $temp['message'] = $usp->quantity_available.' Quantity added By Tejas Product'; 
+                    $upl = UserProductLog::create($temp);
+                    //$up->update($request->all()); 
                 }
                 else {
                   $up->quantity_available = $up->quantity_available + $key->quantity;
+                  $temp['user_product_id'] = $up->id;
+                  $temp['product_id'] = $up->product_id;
+                  $temp['quantity'] = $up->quantity_available;
+                  $temp['product_lp'] = $up->product_lp;
+                  $temp['message'] = $up->quantity_available + $key->quantity > $up->quantity_available ? ' Quantity increased with '.$key->quantity : ' Quantity Decreased with '.$up->quantity_available - $key->quantity; 
+                  $upl = UserProductLog::create($temp);
                   $up->save();
+                  
                 }
             }
+            // Log::info("1 gaja".$total_lp);
             $sellRequest->createTejasSellLedgerTransactions('Success',$user_ledger->id,'Dr',$total_lp,'Product Buy From Mitra',$user_ledger->balance - $total_lp);
-            $sellRequest->createTejasSellLedgerTransactions('Success',$ledger->id,'Cr',$total_lp,'Product Sell To Drishtee',$ledger->balance + $total_lp);
+            $sellRequest->createTejasSellLedgerTransactions('Success',$ledger->id,'Cr',$total_lp,'Product Sell To Drishtee',$ledger->balance + $total_lp,$dm->person_id);
             $user_ledger->balance = $user_ledger->balance - $total_lp;
             $user_ledger->save();
             $ledger->balance = $ledger->balance + $total_lp;

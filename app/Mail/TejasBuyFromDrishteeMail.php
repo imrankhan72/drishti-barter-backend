@@ -21,7 +21,6 @@ class TejasBuyFromDrishteeMail extends Mailable
     public function __construct($user)
     {
         $this->user = $user;
-
     }
 
     /**
@@ -31,7 +30,7 @@ class TejasBuyFromDrishteeMail extends Mailable
      */
     public function build()
     {
-        
-        return $this->subject('Tejas Buy Drishtee Mail')->view('emails.tejas_buy_from_drishtee_mail');
+        return $this->subject('Tejas Buy Drishtee Mail')->view('emails.
+tejas_buy_from_drishtee_mail');
     }
 }

@@ -19,7 +19,11 @@ use App\BarterConfirmation;
 use App\DMGeography;
 use App\PersonService;
 use Log;
-
+use App\BarterMatchLocalInventoryProduct;
+use App\BarterMatchLocalInventoryService;
+use App\BarterMatchLocalInventoryLp;
+use App\State;
+use App\District;
 class BarterController extends Controller
 {
   /**
@@ -51,6 +55,9 @@ class BarterController extends Controller
     }
     if (isset($request['filters']['status']) && !empty($request['filters']['status'])) {
       $barters->where('status', $request['filters']['status']);
+    }
+    if (isset($request['filters']['id']) && !empty($request['filters']['id'])) {
+      $barters->where('id', $request['filters']['id']);
     }
     if(isset($request['filters']['geography_id']) && !empty($request['filters']['geography_id'])) {
       $barters->where('geography_id',$request['filters']['geography_id']);
@@ -115,7 +122,7 @@ class BarterController extends Controller
 
     // dd($request->all());
 
-    Log::info("Barter befor".$request);
+    // Log::info("Barter befor".$request);
 
     $barter = $request['barter'];
     $barter['barter_date_time_added'] = Carbon::now();
@@ -159,7 +166,7 @@ class BarterController extends Controller
         }
       }
     }
-    Log::info("Barter after".$request);
+    // Log::info("Barter after".$request);
     // $request['barter_date_time_added'] = Carbon::now();
     // dd($request->all());
     return response()->json($bc->load('barterHaveServices', 'barterHaveProducts', 'barterHaveLp', 'person'), 201);
@@ -440,7 +447,39 @@ class BarterController extends Controller
     $dm_geo = DMGeography::where('dm_id', $barter->added_by_dm_id)->first();
     $geography_id = $dm_geo->geography_id;
     if ($barter) {
-
+      if(count($barter->barterNeedServices) && count($barter->barterNeedLp)){
+        $barter_matches = BarterMatch::where('barter_id', $barter_id)->get()->load('person.personPersonalDetails', 'barterMatchLocalInventoryLps', 'barterMatchLocalInventoryProducts.product.units', 'barterMatchLocalInventoryServices.service');
+        $needLp = $barter->barterNeedLp;
+        $lp = $needLp[0]->lp;
+        foreach ($barter->barterNeedServices as $bns) {
+          
+          if(count($barter_matches)){
+            $person = $barter_matches[0]->person_id;
+            $service_id = $bns['service_id'];
+            $person = Person::find($barter_matches[0]->person_id);
+            $person->person_services = PersonService::where('service_id', $service_id)->where('person_id', $barter_matches[0]->person_id)->get();
+            $res->push($person->load('personPersonalDetails','ledger'));
+              
+          }else{
+            $service_lp = $bns['service_lp'];
+            $service_id = $bns['service_id'];
+            $persons = Person::whereHas('personServices', function ($query) use ($service_lp, $service_id, $geography_id) {
+              // $query->where('product_lp', '>=', $product_lp);
+              $query->where('service_id', '=', $service_id);
+              $query->where('geography_id', '=', $geography_id);
+            })
+            ->whereHas('ledger', function($query) use ($lp){
+              // $query->where('balance', '>=', $lp);
+            })
+            ->where('id', '!=', $barter->person_id)->where('geography_id', '=', $geography_id)->get();
+            foreach ($persons as $pp) {
+              $pp->person_services = PersonService::where('service_id', $service_id)->where('person_id', $pp->id)->get();
+              $res->push($pp->load('personPersonalDetails','ledger'));
+            }
+          }
+        }
+        return response()->json($res, 200);
+      }
       if(count($barter->barterNeedProducts) && count($barter->barterNeedLp)){
         $barter_matches = BarterMatch::where('barter_id', $barter_id)->get()->load('person.personPersonalDetails', 'barterMatchLocalInventoryLps', 'barterMatchLocalInventoryProducts.product.units', 'barterMatchLocalInventoryServices.service');
         $needLp = $barter->barterNeedLp;
@@ -458,7 +497,7 @@ class BarterController extends Controller
             $product_lp = $bnp['product_lp'];
             $product_id = $bnp['product_id'];
             $persons = Person::whereHas('personProducts', function ($query) use ($product_lp, $product_id, $geography_id) {
-              $query->where('product_lp', '>=', $product_lp);
+              // $query->where('product_lp', '>=', $product_lp);
               $query->where('product_id', '=', $product_id);
               $query->where('geography_id', '=', $geography_id);
             })
@@ -478,7 +517,7 @@ class BarterController extends Controller
         $product_lp = $bnp['product_lp'];
         $product_id = $bnp['product_id'];
         $persons =  Person::whereHas('personProducts', function ($query) use ($product_lp, $product_id, $geography_id) {
-          $query->where('product_lp', '>=', $product_lp);
+          // $query->where('product_lp', '>=', $product_lp);
           $query->where('product_id', '=', $product_id);
           $query->where('geography_id', '=', $geography_id);
         })->where('id', '!=', $barter->person_id)->get();
@@ -504,7 +543,7 @@ class BarterController extends Controller
       foreach ($barter->barterNeedLp as $bnl) {
         $lp = $bnl['lp'];
         $persons = Person::whereHas('ledger', function ($query) use ($lp) {
-          // $query->where('balance', '>=', $lp);
+          $query->where('balance', '>=', $lp);
         })->where('id', '!=', $barter->person_id)->where('geography_id', '=', $geography_id)->get();
         foreach ($persons as $p) {
           $res->push($p->load('personPersonalDetails', 'ledger'));
@@ -535,6 +574,8 @@ class BarterController extends Controller
     // $barter_match['total_lp_offered'] = $barter->barterMatches && $barter->barterMatches->total_lp_offered ? $barter->barterMatches->total_lp_offered:null;
     // $barter_match['local_inventory_type'] = $barter->barterMatches && $barter->barterMatches->local_inventory_type ? $barter->barterMatches->local_inventory_type:null;
     // $barter_match['person'] = $barter->barterMatches && $barter->barterMatches->person ? $barter->barterMatches->person->first_name ." ". ($barter->barterMatches->person && $barter->barterMatches->person->middle_name ? $barter->barterMatches->person->middle_name : null) ."".($barter->barterMatches->person && $barter->barterMatches->person->last_name ? $barter->barterMatches->person->last_name : null) ; 
+    // $barter_matches = Barter::all();
+
     $barter_matches = BarterMatch::where('barter_id', $id)->get()->load('person.personPersonalDetails', 'barterMatchLocalInventoryLps', 'barterMatchLocalInventoryProducts.product.units', 'barterMatchLocalInventoryServices.service');
     return response()->json($barter_matches, 200);
   }
@@ -546,18 +587,151 @@ class BarterController extends Controller
   public function getBarterTransactions($id)
   {
     $barter = Barter::find($id);
+    $dm = $barter->drisheeMitras;
     // $person = Person::find($barter->person_id);
     // dd($person->ledgerTransactions); 
-    $res  = $barter->ledgerTransactions->groupBy('person_id');
+    $res = $barter->ledgerTransactions->groupBy('person_id');
     $rescollect = collect();
     $temp = array();
     foreach ($res as $key => $value) {
       $person = Person::find($key);
-      $temp['person'] =  $person->first_name . ' ' . $person->last_name;
-      $temp['ledgers'] = $value;
+      if($key == $dm->person_id){
+        $temp["DM_person"] = $person->first_name . ' ' . $person->last_name;
+        $temp['DM_profile'] =  $person->personPersonalDetails;
+        $temp['DM_ledgers'] = $value;
+      }else{
+        $temp['person'] =  $person->first_name . ' ' . $person->last_name;
+        $temp['profile'] =  $person->personPersonalDetails;
+        $temp['ledgers'] = $value;
+      }
       $rescollect->push($temp);
       unset($temp);
     }
     return response()->json($rescollect, 200);
+  }
+
+
+
+  public function deleteBarterForce(Request $request,$id)
+  {
+    $barter = Barter::find($id);
+    if($barter) {
+      $bhp = BarterHaveProduct::where('barter_id',$barter->id)->get();
+      if($bhp) {
+        foreach ($bhp as $bh) {
+        $bh->destroy($bh->id);
+          
+        }
+      }
+      $bhs = BarterHaveService::where('barter_id',$barter->id)->get();
+      if($bhs) {
+        foreach ($bhs as $bs) {
+          $bs->destroy($bs->id);
+        }
+      }
+      $bhl = BarterHaveLp::where('barter_id',$barter->id)->get();
+      if($bhl) {
+        foreach ($bhl as $bl) {
+          $bl->destroy($bl->id);
+        }
+      }
+      $bnps = BarterNeedProduct::where('barter_id',$barter->id)->get();
+      if($bnps) {
+        foreach ($bnps as $bnp) {
+          $bnp->destroy($bnp->id);
+        }
+      }
+      $bnss = BarterNeedService::where('barter_id',$barter->id)->get();
+      if($bnps) {
+        foreach ($bnss as $bns) {
+          $bns->destroy($bns->id);
+        }
+      }
+      $bnls = BarterNeedLp::where('barter_id',$barter->id)->get();
+      if($bnps) {
+        foreach ($bnls as $bnl) {
+          $bnl->destroy($bnl->id);
+        }
+      }
+      $bartermatches = BarterMatch::where('barter_id',$barter->id)->get();
+      if($bartermatches) {
+        foreach ($bartermatches as $bm) {
+          $bm->destroy($bm->id);
+        }
+      }
+      $bmlips = BarterMatchLocalInventoryProduct::where('barter_id',$barter->id)->get();
+      if($bmlips) {
+        foreach ($bmlips as $bmlip) {
+        $bmlip->destroy($bmlip->id);
+      }
+      }
+      $bmliss = BarterMatchLocalInventoryService::where('barter_id',$barter->id)->get();
+      if($bmliss) {
+        foreach ($bmliss as $bmlis) {
+        $bmlis->destroy($bmlis->id);
+      }
+      }
+      $bmlils = BarterMatchLocalInventoryLp::where('barter_id',$barter->id)->get();
+      if($bmlils) {
+        foreach ($bmlils as $bmlil) {
+        $bmlil->destroy($bmlil->id);
+      }
+      }
+      $bconfs = BarterConfirmation::where('barter_id',$barter->id)->get();
+      if($bconfs) {
+        foreach ($bconfs as $bc) {
+          $bc->destroy($bc->id);
+        }
+      }
+     $barter->destroy($id);
+     return response()->json(true,201);  
+    }
+    return response()->json(['error'=>'Not Found'],404);
+  }
+  public function barterApiForTarun(Request $request) {
+    $checktoken = $request->header('checktoken');
+      //  dd($checktoken);
+    if($checktoken != '0fQgVCL1cM2mGytOSovz') {
+       return response()->json('Token Invalid',402);
+    }
+    $barters = Barter::where('status','Completed')->get();
+    $res = collect();
+    foreach ($barters as $barter) {
+      $temp['state'] = $barter->geography->state;
+      $temp['district'] = $barter->geography->district;
+      $temp['state_id'] = State::where('name',$temp['state'])->first()->id;
+      $temp['district_id'] = District::where('name',$temp['district'])->first()->id;
+      $temp['lp'] = $barter->barter_total_lp_offered;
+      $temp['month'] = $barter->updated_at->format('m');
+      $temp['year'] = $barter->updated_at->format('Y');
+      $res->push($temp);
+      $temp = null;
+    }
+    $fres = $res->groupBy('state');
+    $data = collect();
+    foreach ($fres as $key=>$value) {
+        $dmgroup = $value->groupBy('district');
+        foreach ($dmgroup as $dm=>$v) {
+          // dd($v);
+          $t['state'] = $key;
+          $t['district'] = $dm;
+          // $t['state_id'] =  
+          $count = 0;
+          foreach ($v as $b) {
+
+           $count += $b['lp'];  
+          }
+          $t['state_id'] = $b['state_id'];
+          $t['district_id'] = $b['district_id'];
+          $t['month'] = $b['month'];
+          $t['year'] = $b['year'];
+          $t['total_lp'] = $count;
+          $t['completed_barter'] = count($v); 
+          $data->push($t);
+          $t = null; 
+        }
+    }
+    // dd(count($barters));
+    return response()->json($data,200);
   }
 }

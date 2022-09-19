@@ -11,7 +11,7 @@ class Person extends Model
 	use SoftDeletes;
 	
     protected $table = 'people';
-    protected $fillable = ['first_name','middle_name','last_name','email','mobile','geography_id','geography_type','ledger_id','otp','status','dm_id','add_by_user_id','otp','added_on','is_profile_complete','available_lp','state_id'];
+    protected $fillable = ['first_name','middle_name','last_name','email','mobile','geography_id','geography_type','ledger_id','otp','status','dm_id','add_by_user_id','otp','added_on','is_profile_complete','available_lp','state_id','block','state','district','vaccinated','dose_1_certificate_name','dose_1_certificate_path','dose_2_certificate_name','dose_2_certificate_path','precation_dose_certificate_name','precaution_dose_certificate_path','dose_1','dose_2','precaution_dose'];
 
      protected $dates = ['created_at','updated_at','deleted_at']; 
 
@@ -118,6 +118,10 @@ class Person extends Model
     {
         return $this->hasOne('App\PersonBan','person_id');
     }
+    public function vaccination()
+    {
+      return $this->hasOne('App\Vaccination','person_id');
+    }
 
     /**
      *
@@ -152,7 +156,9 @@ class Person extends Model
     */
     public static function filterPersons($request){
         $persons = DB::table('people')->where('deleted_at','=',null);
+        if(isset($request['geography_ids'])) {
         $persons->whereIn('geography_id',$request['geography_ids']);
+        }
         if(isset($request['filters'])) {
             $filters = $request['filters'];
             foreach($filters as $key => $value) {
@@ -205,7 +211,25 @@ class Person extends Model
                   // });
 
                 }
+               else if($key == 'state') {
+                   //$persons =  $persons->where(function($query) use ($key,$value) {
+                    $persons = $persons->where('state',$value);
 
+                  // });
+
+                }else if($key == 'district') {
+                   //$persons =  $persons->where(function($query) use ($key,$value) {
+                    $persons = $persons->where('district',$value);
+
+                  // });
+
+                }else if($key == 'block') {
+                   //$persons =  $persons->where(function($query) use ($key,$value) {
+                    $persons = $persons->where('block',$value);
+
+                  // });
+
+                }
                else if($key == 'dm_ids') {
                   // $dm_ids = $request['filters']['dm_ids'];
                   $persons = $persons->whereIn('dm_id',$value);
@@ -305,26 +329,64 @@ class Person extends Model
           $temp['voter_id_no'] = $person->personKycDetail ? $person->personKycDetail->voter_id_no:'';
           $temp['total_land_holding'] = $person->personInfrastructure ? $person->personInfrastructure->total_land_holding:'';
 
-          $temp['irrigation_facilities'] = $person->personInfrastructure ? $person->personInfrastructure->total_land_holding:'';
-          $temp['cultivable_land'] = $person->personInfrastructure ? $person->personInfrastructure->cultivable_land:'';
-          $temp['crop_mapping']= $person->personInfrastructure ? $person->personInfrastructure->crop_mapping:'';
-          $temp['livestock'] =$person->personInfrastructure ? $person->personInfrastructure->livestock:'';
-          $temp['house_type']= $person->personInfrastructure ? $person->personInfrastructure->house_type:'';
-          $temp['vehicles'] = $person->personInfrastructure ? $person->personInfrastructure->vehicles:'';
-          $temp['own_house'] = $person->personInfrastructure ? $person->personInfrastructure->own_house:'';
-          $temp['storage_space'] = $person->personInfrastructure ? $person->personInfrastructure->storage_space:'';
-          $temp['construction_material'] = $person->personInfrastructure ? $person->personInfrastructure->construction_material:'';
-          $temp['machines']= $person->personInfrastructure ? $person->personInfrastructure->machines:'';
-          $temp['farming_equipment']= $person->personInfrastructure ? $person->personInfrastructure->farming_equipment:'';
-          $temp['dob']= $person->personPersonalDetails ? $person->personPersonalDetails->dob:'';
-          $temp['marital_status'] = $person->personPersonalDetails ? $person->personPersonalDetails->marital_status:'';
-          $temp['gender'] = $person->personPersonalDetails ? $person->personPersonalDetails->gender:'';
-          $temp['disability'] = $person->personPersonalDetails ? $person->personPersonalDetails->disability:'';
-          $temp['religion'] = $person->personPersonalDetails ? $person->personPersonalDetails->religion:'';
-          $temp['caste'] = $person->personPersonalDetails? $person->personPersonalDetails->caste:'';
-          $temp['language'] = $person->personPersonalDetails ? $person->personPersonalDetails->language:'';
+          // $temp['irrigation_facilities'] = $person->personInfrastructure ? $person->personInfrastructure->total_land_holding:'';
+          // $temp['cultivable_land'] = $person->personInfrastructure ? $person->personInfrastructure->cultivable_land:'';
+          // $temp['crop_mapping']= $person->personInfrastructure ? $person->personInfrastructure->crop_mapping:'';
+          // $temp['livestock'] =$person->personInfrastructure ? $person->personInfrastructure->livestock:'';
+          // $temp['house_type']= $person->personInfrastructure ? $person->personInfrastructure->house_type:'';
+          // $temp['vehicles'] = $person->personInfrastructure ? $person->personInfrastructure->vehicles:'';
+          // $temp['own_house'] = $person->personInfrastructure ? $person->personInfrastructure->own_house:'';
+          // $temp['storage_space'] = $person->personInfrastructure ? $person->personInfrastructure->storage_space:'';
+          // $temp['construction_material'] = $person->personInfrastructure ? $person->personInfrastructure->construction_material:'';
+          // $temp['machines']= $person->personInfrastructure ? $person->personInfrastructure->machines:'';
+          // $temp['farming_equipment']= $person->personInfrastructure ? $person->personInfrastructure->farming_equipment:'';
+          // $temp['dob']= $person->personPersonalDetails ? $person->personPersonalDetails->dob:'';
+          // $temp['marital_status'] = $person->personPersonalDetails ? $person->personPersonalDetails->marital_status:'';
+          // $temp['gender'] = $person->personPersonalDetails ? $person->personPersonalDetails->gender:'';
+          // $temp['disability'] = $person->personPersonalDetails ? $person->personPersonalDetails->disability:'';
+          // $temp['religion'] = $person->personPersonalDetails ? $person->personPersonalDetails->religion:'';
+          // $temp['caste'] = $person->personPersonalDetails? $person->personPersonalDetails->caste:'';
+          // $temp['language'] = $person->personPersonalDetails ? $person->personPersonalDetails->language:'';
           $data->push($temp);
         }
         return $data;
+    }
+    public static function transformAllData($persons,$request) {
+      $res = collect();
+      foreach ($persons as $person) {
+        $y = $person->created_at->format('Y');
+        $m = $person->created_at->format('m');
+        // dd($m);
+        if($y == $request['year'] && $request['month'] == $m ) {
+         $temp['State'] = $person->state;
+        $temp['District'] = $person->district;
+        $temp['Block'] = $person->block;
+        $temp['Geography'] = $person->geographies->name;
+        $temp['Name'] = $person->first_name.' '.$person->middle_name ? $person->middle_name : ''.$person->last_name;
+          $added_by = null;
+          if($person->dm) {
+            $added_by = $person->dm->first_name;
+            if($person->dm->middle_name) {
+             $added_by = $added_by.' '.$person->dm->middle_name;  
+            }
+            $added_by = $added_by.' '.$person->dm->last_name;
+          }
+          $temp['Added By'] = $added_by;
+          $temp['Type'] = $person->dm && $person->dm->type ? $person->dm->type:'';
+          $temp['Vaccination'] = $person->vaccinated == true? 'Yes':'No';
+          $temp ['Dose 1'] = $person->dose_1_certificate_name!=null ? '1':'0';
+          $temp['Dose 2'] =   $person->dose_2_certificate_name!=null ? '1':'0';
+          $temp['Precaution Dose'] = $person->precation_dose_certificate_name !=null ?'1':'0';
+          $temp['Account No'] = $person->bankAccount && $person->bankAccount->account_number ?$person->bankAccount->account_number: '';
+          $temp['Payee Name'] = $person->bankAccount && $person->bankAccount->payee_name ? $person->bankAccount->payee_name:'';
+          $temp['Bank'] = $person->bankAccount && $person->bankAccount->bank_name? $person->bankAccount->bank_name:'';
+          $temp['IFSC Code'] = $person->bankAccount && $person->bankAccount->ifsc_code? $person->bankAccount->ifsc_code:'';
+          $res->push($temp);
+          $temp = null;  
+        }
+        
+
+      }
+      return $res;
     }
 }

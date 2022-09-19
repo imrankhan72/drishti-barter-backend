@@ -1,0 +1,24 @@
+[2022-09-19 18:01:51] local.ERROR: Class 'Matthewbdaly\LaravelAzureStorage\AzureStorageServiceProvider' not found {"exception":"[object] (Symfony\\Component\\Debug\\Exception\\FatalThrowableError(code: 0): Class 'Matthewbdaly\\LaravelAzureStorage\\AzureStorageServiceProvider' not found at /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Application.php:670)
+[stacktrace]
+#0 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Application.php(604): Illuminate\\Foundation\\Application->resolveProvider()
+#1 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/ProviderRepository.php(75): Illuminate\\Foundation\\Application->register()
+#2 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Application.php(584): Illuminate\\Foundation\\ProviderRepository->load()
+#3 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Bootstrap/RegisterProviders.php(17): Illuminate\\Foundation\\Application->registerConfiguredProviders()
+#4 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Application.php(210): Illuminate\\Foundation\\Bootstrap\\RegisterProviders->bootstrap()
+#5 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Console/Kernel.php(322): Illuminate\\Foundation\\Application->bootstrapWith()
+#6 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Console/Kernel.php(131): Illuminate\\Foundation\\Console\\Kernel->bootstrap()
+#7 /home/tanaychatterjee/Desktop/DrishteeLaravel/artisan(37): Illuminate\\Foundation\\Console\\Kernel->handle()
+#8 {main}
+"} 
+[2022-09-19 18:04:02] local.ERROR: Class 'Matthewbdaly\LaravelAzureStorage\AzureStorageServiceProvider' not found {"exception":"[object] (Symfony\\Component\\Debug\\Exception\\FatalThrowableError(code: 0): Class 'Matthewbdaly\\LaravelAzureStorage\\AzureStorageServiceProvider' not found at /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Application.php:670)
+[stacktrace]
+#0 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Application.php(604): Illuminate\\Foundation\\Application->resolveProvider()
+#1 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/ProviderRepository.php(75): Illuminate\\Foundation\\Application->register()
+#2 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Application.php(584): Illuminate\\Foundation\\ProviderRepository->load()
+#3 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Bootstrap/RegisterProviders.php(17): Illuminate\\Foundation\\Application->registerConfiguredProviders()
+#4 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Application.php(210): Illuminate\\Foundation\\Bootstrap\\RegisterProviders->bootstrap()
+#5 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Console/Kernel.php(322): Illuminate\\Foundation\\Application->bootstrapWith()
+#6 /home/tanaychatterjee/Desktop/DrishteeLaravel/vendor/laravel/framework/src/Illuminate/Foundation/Console/Kernel.php(131): Illuminate\\Foundation\\Console\\Kernel->bootstrap()
+#7 /home/tanaychatterjee/Desktop/DrishteeLaravel/artisan(37): Illuminate\\Foundation\\Console\\Kernel->handle()
+#8 {main}
+"} 

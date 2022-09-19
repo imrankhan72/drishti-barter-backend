@@ -72,7 +72,7 @@ class BarterMatchController extends Controller
       return response()->json($errors, 400);
     }
 
-    Log::info("Barter Match Controller store ".$request);
+    Log::info("Barter Match Controller store " . $request);
     $bm = BarterMatch::create($request->only('barter_id', 'match_type', 'barter_2_id', 'person_id', 'total_lp_offered', 'local_inventory_type'));
     $request['barter_match_id'] = $bm->id;
     if ($request['local_inventory_type'] == 'product') {
@@ -243,13 +243,15 @@ class BarterMatchController extends Controller
   }
   public function barterMarkComplete($barter_id)
   {
+    $smsTempleteId = 1207161761463283232;
     $barter = Barter::find($barter_id);
     $barter->status = 'Completed';
 
-    $tempLP = -50;
+    $tempLP = 0;
     $person = Person::find($barter->person_id);
     $BPledger = Ledger::find($person->ledger_id);
     $dm_margin = DmMarginPercentage::first();
+
     $dm = DrishteeMitra::find($barter->added_by_dm_id);
     $dmledger = Ledger::find($dm->ledger_id);
 
@@ -257,11 +259,12 @@ class BarterMatchController extends Controller
     $BMLIS = $barter->barterMatchLocalInventoryServices;
     $BMLIL = $barter->barterMatchLocalInventoryLps;
 
-    Log::info("Count of match ".count($BMLIP)." ".count($BMLIS)." ".count($BMLIL));
+    // Log::info("Count of match " . count($BMLIP) . " " . count($BMLIS) . " " . count($BMLIL));
+    
     if (count($BMLIP) && count($BMLIL)) {
-      Log::info("BMLIP && BMLIL ".$barter->id);
+      // Log::info("BMLIP && BMLIL " . $barter->id);
       $BM = BarterMatch::orWhere([["local_inventory_type", "product"], ["barter_id", $barter->id]])
-        ->orWhere([["local_inventory_type", "lp"], ["barter_id", $barter->id]])->orderBy("local_inventory_type","ASC")->get();
+        ->orWhere([["local_inventory_type", "lp"], ["barter_id", $barter->id]])->orderBy("local_inventory_type", "ASC")->get();
 
       foreach ($BM as $bm) {
         $dmledgerbm = Ledger::find($dm->ledger_id);
@@ -271,32 +274,46 @@ class BarterMatchController extends Controller
         $bmlip = $bm->barterMatchLocalInventoryProducts;
         if ($bmlip) {
           foreach ($barter->barterHaveProducts as $bhp) {
-            $BHPP = PersonProduct::find($bhp->person_product_id);
-            $BHPP->quantity_available = $BHPP->quantity_available - $bhp->quantity;
-            $BHPP->save();
+            $pr = ($bhp->product_lp * $bhp->quantity) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $BPledger->balance >= $pr) {
+              
+              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
+              
+              $dmledgerbal = $dmledger->balance + $pr;
+              $dmledger->balance = $dmledgerbal;
+              $dmledger->save();
 
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bhp->product_lp * $bhp->quantity), 'Barter Buy Product to Person', $BPledger->balance - ($bhp->product_lp * $bhp->quantity), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance - ($bhp->product_lp * $bhp->quantity);
-            // $BPledger->save();
+              $BPledger->balance = $BPledger->balance - $pr;
+              $BPledger->save();
 
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bhp->quantity * $bhp->product_lp), 'Barter Sell Product to Person', $ledgerbm->balance + ($bhp->quantity * $bhp->product_lp), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance + ($bhp->quantity * $bhp->product_lp);
-            // $ledgerbm->save();
-
-
-            // $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bhp->product_lp * $bhp->quantity), 'Barter Sell Product to Person', $BPledger->balance + ($bhp->product_lp * $bhp->quantity), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance + ($bhp->product_lp * $bhp->quantity);
-            // $BPledger->save();
-
-            if ($dm_margin) {
-              $pr = ($bhp->product_lp * $bhp->quantity) * ($dm_margin->dm_margin_percentage / 100);
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile ,$smsTempleteId);
+              $pr = 0;
+            }else{
+              return response()->json("Bater Have Person Does Not Have Sufficient Balance To Deduct", 400); 
+            }
+            $pr = ($bmlip->product_lp * $bmlip->product_quantity) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $ledgerbm->balance >= $pr) {
+              
               $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
               $dmledgerbal = $dmledger->balance + $pr;
               $dmledger->balance = $dmledgerbal;
               $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
+
+              $ledgerbm->balance = $ledgerbm->balance - $pr;
+              $ledgerbm->save();
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
               $pr = 0;
+            }else{
+              return response()->json("Bater Match Person Does Not Have Sufficient Balance To Deduct", 400); 
             }
+
+            $BHPP = PersonProduct::find($bhp->person_product_id);
+            $BHPP->quantity_available = $BHPP->quantity_available - $bhp->quantity;
+            $BHPP->save();
+
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bhp->product_lp * $bhp->quantity), 'Barter ID: '.$barter->id.' Sell Product '.$BHPP->product->name.' With Quantity '.$bhp->quantity.' To '.$bmlip->barterMatch->person->first_name.' '.$bmlip->barterMatch->person->last_name, $BPledger->balance - ($bhp->product_lp * $bhp->quantity), $barter->person_id);
+
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bhp->quantity * $bhp->product_lp), 'Barter ID: '.$barter->id.' Buy Product '.$BHPP->product->name.' With Quantity '.$bhp->quantity.' From '.$person->first_name.' '.$person->last_name, $ledgerbm->balance + ($bhp->quantity * $bhp->product_lp), $bm->person_id);
 
             $mpp = PersonProduct::where("product_id", $BHPP->product_id)->where("person_id", $bm->person_id)->first();
             if ($mpp) {
@@ -316,25 +333,14 @@ class BarterMatchController extends Controller
               $pp->save();
             }
 
-            // $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bhp->quantity * $bhp->product_lp), 'Barter Buy Product to Person', $ledgerbm->balance - ($bhp->quantity * $bhp->product_lp), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance - ($bhp->quantity * $bhp->product_lp);
-            // $ledgerbm->save();
-
-
             $BMLIPP = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $bm->person_id)->first();
             $BMLIPP->quantity_available = $BMLIPP->quantity_available - $bmlip->product_quantity;
             $BMLIPP->save();
 
-            // $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bmlip->product_lp * $bmlip->product_quantity), 'Barter Sell Product to Person', $ledgerbm->balance + ($bmlip->product_lp * $bmlip->product_quantity), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance + ($bmlip->product_lp * $bmlip->product_quantity);
-            // $ledgerbm->save();
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bmlip->product_lp * $bmlip->product_quantity), 'Barter Sell Product to Person', $BPledger->balance + ($bmlip->product_lp * $bmlip->product_quantity), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance + ($bmlip->product_lp * $bmlip->product_quantity);
-            // $BPledger->save();
+            
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bmlip->product_lp * $bmlip->product_quantity), 'Barter ID: '.$barter->id.' Buy Product '.$BMLIPP->product->name.' With Quantity '.$bmlip->product_quantity.' From '.$BMLIPP->person->first_name.' '.$BMLIPP->person->last_name, $BPledger->balance + ($bmlip->product_lp * $bmlip->product_quantity), $barter->person_id);
 
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bmlip->product_quantity * $bmlip->product_lp), 'Barter Buy Product to Person', $ledgerbm->balance - ($bmlip->product_quantity * $bmlip->product_lp), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance - ($bmlip->product_quantity * $bmlip->product_lp);
-            // $ledgerbm->save();
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bmlip->product_quantity * $bmlip->product_lp), 'Barter ID: '.$barter->id.' Sell Product '.$BMLIPP->product->name.' With Quantity '.$bmlip->product_quantity.' To '.$person->first_name.' '.$person->last_name, $ledgerbm->balance - ($bmlip->product_quantity * $bmlip->product_lp), $bm->person_id);
 
             $mpp = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $barter->person_id)->first();
             if ($mpp) {
@@ -352,47 +358,55 @@ class BarterMatchController extends Controller
               $pp->product_lp = $BMLIPP->product_lp;
               $pp->active_on_barterplace = $BMLIPP->active_on_barterplace;
               $pp->save();
-            }
-
-
-            if ($dm_margin) {
-              $pr = ($bmlip->product_lp * $bmlip->product_quantity) * ($dm_margin->dm_margin_percentage / 100);
-              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-              $dmledgerbal = $dmledger->balance + $pr;
-              $dmledger->balance = $dmledgerbal;
-              $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-              $pr = 0;
             }
           }
 
           foreach ($barter->barterHaveServices as $bhs) {
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bhs->service_lp * $bhs->no_of_days), 'Barter Sell Service to Person', $BPledger->balance + ($bhs->service_lp * $bhs->no_of_days), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance + ($bhs->service_lp * $bhs->no_of_days);
-            // $BPledger->save();
+            $pr = ($bmlip->product_lp * $bmlip->product_quantity) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $ledgerbm->balance >= $pr) {
+              
+              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
+              $dmledgerbal = $dmledger->balance + $pr;
+              
+              $dmledger->balance = $dmledgerbal;
+              $dmledger->save();
 
-            if ($dm_margin) {
-              $pr = ($bhs->service_lp * $bhs->no_of_days) * ($dm_margin->dm_margin_percentage / 100);
+              $ledgerbm->balance = $ledgerbm->balance - $pr;
+              $ledgerbm->save();
+              
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
+              $pr = 0;
+            }else{
+              return response()->json("Bater Match Person Does Not Have Sufficient Balance To Deduct", 400); 
+            }
+            $pr = ($bhs->service_lp * $bhs->no_of_days) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $BPledger->balance >= $pr) {
+              
               $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
               $dmledgerbal = $dmledger->balance + $pr;
               $dmledger->balance = $dmledgerbal;
               $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
+
+              $BPledger->balance = $BPledger->balance - $pr;
+              $BPledger->save();
+
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
               $pr = 0;
+            }else{
+              return response()->json("Bater Have Person Does Not Have Sufficient Balance To Deduct", 400); 
             }
 
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bhs->no_of_days * $bhs->service_lp), 'Barter Sell Product to Person', $ledgerbm->balance - ($bhs->no_of_days * $bhs->service_lp), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance - ($bhs->no_of_days * $bhs->service_lp);
-            // $ledgerbm->save();
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bhs->service_lp * $bhs->no_of_days), 'Barter ID: '.$barter->id.' Buy Service '.$bhs->personService->service->name.' With No. Of Days: '.$bhs->no_of_days.' From '.$person->first_name.' '.$person->last_name, $BPledger->balance + ($bhs->service_lp * $bhs->no_of_days), $bm->person_id);
+
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bhs->no_of_days * $bhs->service_lp), 'Barter ID: '.$barter->id.' Sell Service '.$bhs->personService->service->name.' With No. Of Days '.$bhs->no_of_days.' To '.$bmlip->barterMatch->person->first_name.' '.$bmlip->barterMatch->person->last_name, $ledgerbm->balance - ($bhs->no_of_days * $bhs->service_lp), $barter->person_id);
 
 
             $BMLIPP = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $bm->person_id)->first();
             $BMLIPP->quantity_available = $BMLIPP->quantity_available - $bmlip->product_quantity;
             $BMLIPP->save();
 
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bmlip->product_lp * $bmlip->product_quantity), 'Barter Buy Product to Person', $ledgerbm->balance + ($bmlip->product_lp * $bmlip->product_quantity), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance + ($bmlip->product_lp * $bmlip->product_quantity);
-            // $ledgerbm->save();
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bmlip->product_lp * $bmlip->product_quantity), 'Barter ID: '.$barter->id.' Buy Product '.$bmlip->product->name.' With Quantity '.$bmlip->product_quantity.' From '.$bmlip->barterMatch->person->first_name.' '.$bmlip->barterMatch->person->last_name, $ledgerbm->balance + ($bmlip->product_lp * $bmlip->product_quantity), $barter->person_id);//$bm->person_id
+            
 
             $mpp = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $barter->person_id)->first();
             if ($mpp) {
@@ -411,27 +425,33 @@ class BarterMatchController extends Controller
               $pp->active_on_barterplace = $BMLIPP->active_on_barterplace;
               $pp->save();
             }
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bmlip->product_quantity * $bmlip->product_lp), 'Barter Sell Product to Person', $BPledger->balance - ($bmlip->product_quantity * $bmlip->product_lp), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance - ($bmlip->product_quantity * $bmlip->product_lp);
-            // $BPledger->save();
-
-            if ($dm_margin) {
-              $pr = ($bmlip->product_lp * $bmlip->product_quantity) * ($dm_margin->dm_margin_percentage / 100);
-              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-              $dmledgerbal = $dmledger->balance + $pr;
-              $dmledger->balance = $dmledgerbal;
-              $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-              $pr = 0;
-            }
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bmlip->product_quantity * $bmlip->product_lp), 'Barter ID: '.$barter->id.' Sell Product '.$bmlip->product->name.' With Quantity '.$bmlip->product_quantity.' To '.$person->first_name.' '.$person->last_name ,$BPledger->balance - ($bmlip->product_quantity * $bmlip->product_lp), $bm->person_id);
           }
 
           foreach ($barter->barterHaveLp as $bhl) {
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', $bhl->lp, 'Barter Sell LP to Person', $ledgerbm->balance + $bhl->lp, $bm->person_id);
+            $pr = ($bmlip->product_lp * $bmlip->product_quantity) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $ledgerbm->balance >= $pr) {
+              
+              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
+              $dmledgerbal = $dmledger->balance + $pr;
+            
+              $dmledger->balance = $dmledgerbal;
+              $dmledger->save();
+
+              $ledgerbm->balance = $ledgerbm->balance - $pr;
+              $ledgerbm->save();
+            
+
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
+              $pr = 0;
+            }else{
+              return response()->json("Bater Match Person Does Not Have Sufficient Balance To Deduct", 400); 
+            }
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', $bhl->lp, 'Barter ID: '.$barter->id.' Buy LP: '.$bhl->lp.' From '.$person->first_name.' '.$person->last_name, $ledgerbm->balance + $bhl->lp, $bm->person_id);
             $ledgerbm->balance = $ledgerbm->balance + $bhl->lp;
             $ledgerbm->save();
 
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', $bhl->lp, 'Barter Buy LP to Person', $BPledger->balance - $bhl->lp, $barter->person_id);
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', $bhl->lp, 'Barter ID:'.$barter->id.' Sell LP '.$bhl->lp.' To '.$bmlip->barterMatch->person->first_name.' '.$bmlip->barterMatch->person->last_name, $BPledger->balance - $bhl->lp, $barter->person_id);
             $BPledger->balance = $BPledger->balance - $bhl->lp;
             $BPledger->save();
 
@@ -441,9 +461,8 @@ class BarterMatchController extends Controller
             $BMLIPP->quantity_available = $BMLIPP->quantity_available - $bmlip->product_quantity;
             $BMLIPP->save();
 
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bmlip->product_lp * $bmlip->product_quantity), 'Barter Sell Product to Person', $ledgerbm->balance + ($bmlip->product_lp * $bmlip->product_quantity), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance + ($bmlip->product_lp * $bmlip->product_quantity);
-            // $ledgerbm->save();
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bmlip->product_lp * $bmlip->product_quantity), 'Barter ID: '.$barter->id.' Buy Product '.$bmlip->product->name.' With Quantity '.$bmlip->product_quantity.' From '.$bmlip->barterMatch->person->first_name.' '.$bmlip->barterMatch->person->last_name, $ledgerbm->balance  + ($bmlip->product_lp * $bmlip->product_quantity), $barter->person_id);
+            
 
             $mpp = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $barter->person_id)->first();
             if ($mpp) {
@@ -462,166 +481,118 @@ class BarterMatchController extends Controller
               $pp->active_on_barterplace = $BMLIPP->active_on_barterplace;
               $pp->save();
             }
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bmlip->product_quantity * $bmlip->product_lp), 'Barter Sell Product to Person', $BPledger->balance - ($bmlip->product_quantity * $bmlip->product_lp), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance - ($bmlip->product_quantity * $bmlip->product_lp);
-            // $BPledger->save();
-
-            if ($dm_margin) {
-              $pr = ($bmlip->product_lp * $bmlip->product_quantity) * ($dm_margin->dm_margin_percentage / 100);
-              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-              $dmledgerbal = $dmledger->balance + $pr;
-              $dmledger->balance = $dmledgerbal;
-              $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-              $pr = 0;
-            }
-
-
-            if ($dm_margin) {
-              $pr = $bhl->lp * ($dm_margin->dm_margin_percentage / 100);
-              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-              $dmledgerbal = $dmledger->balance + $pr;
-              $dmledger->balance = $dmledgerbal;
-              $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-              $pr = 0;
-            }
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bmlip->product_quantity * $bmlip->product_lp), 'Barter ID: '.$barter->id.' Sell Product '.$bmlip->product->name.' With Quantity '. $bmlip->product_quantity.' To '.$person->first_name.' '.$person->last_name, $BPledger->balance - ($bmlip->product_quantity * $bmlip->product_lp), $bm->person_id);            
           }
         }
         $bmlilp = $bm->barterMatchLocalInventoryLps;
         if ($bmlilp) {
           foreach ($barter->barterHaveProducts as $bhp) {
-            if(($ledgerbm->balance - $bmlilp->lp) >= $tempLP){
-              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlilp->lp, 'Barter Sell LP to Person', $ledgerbm->balance - $bmlilp->lp, $bm->person_id);
+            if (($ledgerbm->balance - $bmlilp->lp) >= $tempLP) {
+
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlilp->lp, 'Barter ID: '.$barter->id.' Sell Lp '.$bmlilp->lp.' To '.$person->first_name.' '.$person->last_name, $ledgerbm->balance - $bmlilp->lp, $bm->person_id);
+
               $ledgerbm->balance = $ledgerbm->balance - $bmlilp->lp;
               $ledgerbm->save();
 
-              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlilp->lp, 'Barter Buy LP to Person', $BPledger->balance + $bmlilp->lp, $barter->person_id);
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlilp->lp, 'Barter ID: '.$barter->id.' Buy LP '.$bmlilp->lp.' From '.$bmlilp->barterMatch->person->first_name.' '.$bmlilp->barterMatch->person->last_name, $BPledger->balance + $bmlilp->lp, $barter->person_id);
+              
               $BPledger->balance = $BPledger->balance + $bmlilp->lp;
               $BPledger->save();
-
-               if ($dm_margin) {
-                $pr = $bmlilp->lp * ($dm_margin->dm_margin_percentage / 100);
-                $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-                $dmledgerbal = $dmledger->balance + $pr;
-                $dmledger->balance = $dmledgerbal;
-                $dmledger->save();
-                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-                $pr = 0;
-              }
-            }else{
-              return response()->json("Match Person Have Not Enough LP.",400);
+            } else {
+              return response()->json("Match Person Have Not Enough LP.", 400);
             }
           }
 
           foreach ($barter->barterHaveServices as $bhs) {
 
-            if(($ledgerbm->balance - $bmlilp->lp) >= $tempLP){
+            if (($ledgerbm->balance - $bmlilp->lp) >= $tempLP) {
 
-              // $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bhs->service_lp * $bhs->no_of_days), 'Barter Sell Service to Person', $BPledger->balance + ($bhs->service_lp * $bhs->no_of_days), $barter->person_id);
-              // $BPledger->balance = $BPledger->balance + ($bhs->service_lp * $bhs->no_of_days);
-              // $BPledger->save();
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlilp->lp, 'Barter ID: '.$barter->id.' Sell LP '.$bmlilp->lp.' To '.$person->first_name.' '.$person->last_name, $ledgerbm->balance - $bmlilp->lp, $bm->person_id);
 
-              // $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bhs->no_of_days * $bhs->service_lp), 'Barter Buy Service to Person', $ledgerbm->balance - ($bhs->no_of_days * $bhs->service_lp), $bm->person_id);
-              // $ledgerbm->balance = $ledgerbm->balance - ($bhs->no_of_days * $bhs->service_lp);
-              // $ledgerbm->save();
-
-              // if ($dm_margin) {
-              //   $pr = ($bhs->service_lp * $bhs->no_of_days) * ($dm_margin->dm_margin_percentage / 100);
-              //   $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-              //   $dmledgerbal = $dmledger->balance + $pr;
-              //   $dmledger->balance = $dmledgerbal;
-              //   $dmledger->save();
-              //   sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-              //   $pr = 0;
-              // }
-
-              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlilp->lp, 'Barter Sell Product to Person', $ledgerbm->balance - $bmlilp->lp, $bm->person_id);
               $ledgerbm->balance = $ledgerbm->balance - $bmlilp->lp;
               $ledgerbm->save();
 
-              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlilp->lp, 'Barter Sell Product to Person', $BPledger->balance + $bmlilp->lp, $barter->person_id);
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlilp->lp, 'Barter ID: '.$barter->id .' Buy LP '.$bmlilp->lp.' From '.$bmlilp->barterMatch->person->first_name.' '.$bmlilp->barterMatch->person->last_name, $BPledger->balance + $bmlilp->lp, $barter->person_id);
+
               $BPledger->balance = $BPledger->balance + $bmlilp->lp;
               $BPledger->save();
 
-              if ($dm_margin) {
-                $pr = $bmlilp->lp * ($dm_margin->dm_margin_percentage / 100);
-                $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-                $dmledgerbal = $dmledger->balance + $pr;
-                $dmledger->balance = $dmledgerbal;
-                $dmledger->save();
-                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-                $pr = 0;
-              }
-            }else{
-              return response()->json("Match Person Have Not Enough LP.",400);
+            } else {
+              return response()->json("Match Person Have Not Enough LP.", 400);
             }
           }
-          
+
           foreach ($barter->barterHaveLp as $bhl) {
-            if((($ledgerbm->balance - $bmlilp->lp) >= $tempLP) && (($BPledger->balance - $bhl->lp) >= $tempLP) ) {
+            if ((($ledgerbm->balance - $bmlilp->lp) >= $tempLP) && (($BPledger->balance - $bhl->lp) >= $tempLP)) {
 
-              // $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', $bhl->lp, 'Barter Sell LP to Person', $ledgerbm->balance + $bhl->lp, $bm->person_id);
-              // $ledgerbm->balance = $ledgerbm->balance + $bhl->lp;
-              // $ledgerbm->save();
-
-              // $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', $bhl->lp, 'Barter Buy LP to Person', $BPledger->balance - $bhl->lp, $barter->person_id);
-              // $BPledger->balance = $BPledger->balance - $bhl->lp;
-              // $BPledger->save();
-
-
-              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlilp->lp, 'Barter Sell LP to Person', $ledgerbm->balance - $bmlilp->lp, $bm->person_id);
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlilp->lp, 'Barter ID:'.$barter->id.' Sell LP '.$bmlilp->lp.' To'.$person->first_name.' '.$person->last_name, $ledgerbm->balance - $bmlilp->lp, $bm->person_id);
+              
               $ledgerbm->balance = $ledgerbm->balance - $bmlilp->lp;
               $ledgerbm->save();
 
-              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlilp->lp, 'Barter Buy LP to Person', $BPledger->balance + $bmlilp->lp, $barter->person_id);
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlilp->lp, 'Barter ID:'.$barter->id.' Buy LP '.$bmlilp->lp.' From '.$bmlilp->barterMatch->person->first_name.' '.$bmlilp->barterMatch->person->last_name , $BPledger->balance + $bmlilp->lp, $barter->person_id);
+              
               $BPledger->balance = $BPledger->balance + $bmlilp->lp;
               $BPledger->save();
 
-              if ($dm_margin) {
-                $pr = $bhl->lp * ($dm_margin->dm_margin_percentage / 100);
-                $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-                $dmledgerbal = $dmledger->balance + $pr;
-                $dmledger->balance = $dmledgerbal;
-                $dmledger->save();
-                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-                $pr = 0;
-              }
-            }else{
-              return response()->json("Barter Person Or Match Person Have Not Enough LP.",400);
+            } else {
+              return response()->json("Barter Person Or Match Person Have Not Enough LP.", 400);
             }
           }
         }
       }
-    } else if (count($BMLIP)) {
-      Log::info("BMLIP ".$barter->id);
-      $BM = BarterMatch::orWhere([["local_inventory_type", "product"], ["barter_id", $barter->id]])->get();
+    } else if (count($BMLIS) && count($BMLIL)) {
+      // Log::info("BMLIS && BMLIL " . $barter->id);
+      $BM = BarterMatch::orWhere([["local_inventory_type", "service"], ["barter_id", $barter->id]])
+        ->orWhere([["local_inventory_type", "lp"], ["barter_id", $barter->id]])->orderBy("local_inventory_type", "ASC")->get();
 
       foreach ($BM as $bm) {
         $dmledgerbm = Ledger::find($dm->ledger_id);
         $bm_person = Person::find($bm->person_id);
         $ledgerbm = Ledger::find($bm_person->ledger_id);
 
-        $bmlip = $bm->barterMatchLocalInventoryProducts;
-        if ($bmlip) {
+        $bmlis = $bm->barterMatchLocalInventoryServices;
+        if ($bmlis) {
           foreach ($barter->barterHaveProducts as $bhp) {
-            $BHPP = PersonProduct::find($bhp->person_product_id);
-            $BHPP->quantity_available = $BHPP->quantity_available - $bhp->quantity;
-            $BHPP->save();
-
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bhp->product_lp * $bhp->quantity), 'Barter Sell Product to Person', $BPledger->balance + ($bhp->product_lp * $bhp->quantity), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance + ($bhp->product_lp * $bhp->quantity);
-            // $BPledger->save();
-
-            if ($dm_margin) {
-              $pr = ($bhp->product_lp * $bhp->quantity) * ($dm_margin->dm_margin_percentage / 100);
+            $pr = ($bhp->product_lp * $bhp->quantity) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $BPledger->balance >= $pr) {
+              
               $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
               $dmledgerbal = $dmledger->balance + $pr;
               $dmledger->balance = $dmledgerbal;
               $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
+
+              $BPledger->balance = $BPledger->balance - $pr;
+              $BPledger->save();
+
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
               $pr = 0;
+            }else{
+              return response()->json("Bater Have Person Does Not Have Sufficient Balance To Deduct", 400); 
             }
+
+            $pr = ($bmlis->no_of_days * $bmlis->service_lp) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $ledgerbm->balance >= $pr) {
+              
+              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
+              $dmledgerbal = $dmledger->balance + $pr;
+              $dmledger->balance = $dmledgerbal;
+              $dmledger->save();
+
+              $ledgerbm->balance = $ledgerbm->balance - $pr;
+              $ledgerbm->save();
+
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
+              $pr = 0;
+            }else{
+              return response()->json("Bater Match Person Does Not Have Sufficient Balance To Deduct", 400); 
+            }
+
+            $BHPP = PersonProduct::find($bhp->person_product_id);
+            $BHPP->quantity_available = $BHPP->quantity_available - $bhp->quantity;
+            $BHPP->save();
+
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bhp->product_lp * $bhp->quantity), 'Barter ID: '.$barter->id.' Sell Product '.$bhp->personProduct->product->name.' With Quantity '.$bhp->quantity.' To '.$bmlis->barterMatch->person->first_name.' '.$bmlis->barterMatch->person->last_name, $BPledger->balance - ($bhp->product_lp * $bhp->quantity), $barter->person_id);
 
             $mpp = PersonProduct::where("product_id", $BHPP->product_id)->where("person_id", $bm->person_id)->first();
             if ($mpp) {
@@ -640,139 +611,342 @@ class BarterMatchController extends Controller
               $pp->active_on_barterplace = $BHPP->active_on_barterplace;
               $pp->save();
             }
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bhp->quantity * $bhp->product_lp), 'Barter Buy Product to Person', $ledgerbm->balance - ($bhp->quantity * $bhp->product_lp), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance - ($bhp->quantity * $bhp->product_lp);
-            // $ledgerbm->save();
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bhp->quantity * $bhp->product_lp), 'Barter ID: '.$barter->id.' Buy Product '.$bhp->personProduct->product->name.' With Quantity: '.$bhp->quantity.' From '.$person->first_name.' '.$person->last_name, $ledgerbm->balance - ($bhp->quantity * $bhp->product_lp), $bm->person_id);
+           
 
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter ID: '.$barter->id.' Buy Service '.$bmlis->service->name.' With No. Of Days '.$bmlis->no_of_days.' From '.$bm_person->first_name.' '.$bm_person->last_name, $BPledger->balance + ($bmlis->no_of_days * $bmlis->service_lp), $person->id);
 
-            $BMLIPP = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $bm->person_id)->first();
-            $BMLIPP->quantity_available = $BMLIPP->quantity_available - $bmlip->product_quantity;
-            $BMLIPP->save();
-
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bmlip->product_lp * $bmlip->product_quantity), 'Barter Sell Product to Person', $ledgerbm->balance + ($bmlip->product_lp * $bmlip->product_quantity), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance + ($bmlip->product_lp * $bmlip->product_quantity);
-            // $ledgerbm->save();
-
-            $mpp = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $barter->person_id)->first();
-            if ($mpp) {
-              $mpp->quantity_available = $mpp->quantity_available + $bmlip->product_quantity;
-              $mpp->save();
-            } else {
-              $pp = new PersonProduct();
-              $pp->geography_id = $BMLIPP->geography_id;
-              $pp->geography_type = $BMLIPP->geography_type;
-              $pp->dm_id = $BMLIPP->dm_id;
-              $pp->person_id = $barter->person_id;
-              $pp->product_id = $BMLIPP->product_id;
-              $pp->unit_id = $BMLIPP->unit_id;
-              $pp->quantity_available = $bmlip->product_quantity;
-              $pp->product_lp = $BMLIPP->product_lp;
-              $pp->active_on_barterplace = $BMLIPP->active_on_barterplace;
-              $pp->save();
-            }
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bmlip->product_quantity * $bmlip->product_lp), 'Barter Sell Product to Person', $BPledger->balance - ($bmlip->product_quantity * $bmlip->product_lp), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance - ($bmlip->product_quantity * $bmlip->product_lp);
-            // $BPledger->save();
-
-            if ($dm_margin) {
-              $pr = ($bmlip->product_lp * $bmlip->product_quantity) * ($dm_margin->dm_margin_percentage / 100);
-              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-              $dmledgerbal = $dmledger->balance + $pr;
-              $dmledger->balance = $dmledgerbal;
-              $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-              $pr = 0;
-            }
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter ID: '.$barter->id.' Sell Service '.$bmlis->service->name.' With No. Of Days '.$bmlis->no_of_days.' To '.$person->first_name.' '.$person->last_name, $ledgerbm->balance - ($bmlis->no_of_days * $bmlis->service_lp), $bm->person_id);
           }
 
           foreach ($barter->barterHaveServices as $bhs) {
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bhs->service_lp * $bhs->no_of_days), 'Barter Sell Service to Person', $BPledger->balance + ($bhs->service_lp * $bhs->no_of_days), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance + ($bhs->service_lp * $bhs->no_of_days);
-            // $BPledger->save();
-
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bhs->no_of_days * $bhs->service_lp), 'Barter Buy Service to Person', $ledgerbm->balance - ($bhs->no_of_days * $bhs->service_lp), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance - ($bhs->no_of_days * $bhs->service_lp);
-            // $ledgerbm->save();
-
-            if ($dm_margin) {
-              $pr = ($bhs->service_lp * $bhs->no_of_days) * ($dm_margin->dm_margin_percentage / 100);
+            $pr = ($bhs->service_lp * $bhs->no_of_days) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $BPledger->balance >= $pr) {
+              
               $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
               $dmledgerbal = $dmledger->balance + $pr;
               $dmledger->balance = $dmledgerbal;
               $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-              $pr = 0;
-            }
 
-            $BMLIPP = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $bm->person_id)->first();
-            $BMLIPP->quantity_available = $BMLIPP->quantity_available - $bmlip->product_quantity;
-            $BMLIPP->save();
-
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bmlip->product_lp * $bmlip->product_quantity), 'Barter Sell Product to Person', $ledgerbm->balance + ($bmlip->product_lp * $bmlip->product_quantity), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance + ($bmlip->product_lp * $bmlip->product_quantity);
-            // $ledgerbm->save();
-
-            $mpp = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $barter->person_id)->first();
-            if ($mpp) {
-              $mpp->quantity_available = $mpp->quantity_available + $bmlip->product_quantity;
-              $mpp->save();
-            } else {
-              $pp = new PersonProduct();
-              $pp->geography_id = $BMLIPP->geography_id;
-              $pp->geography_type = $BMLIPP->geography_type;
-              $pp->dm_id = $BMLIPP->dm_id;
-              $pp->person_id = $barter->person_id;
-              $pp->product_id = $BMLIPP->product_id;
-              $pp->unit_id = $BMLIPP->unit_id;
-              $pp->quantity_available = $bmlip->product_quantity;
-              $pp->product_lp = $BMLIPP->product_lp;
-              $pp->active_on_barterplace = $BMLIPP->active_on_barterplace;
-              $pp->save();
-            }
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bmlip->product_quantity * $bmlip->product_lp), 'Barter Buy Product to Person', $BPledger->balance - ($bmlip->product_quantity * $bmlip->product_lp), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance - ($bmlip->product_quantity * $bmlip->product_lp);
-            // $BPledger->save();
-
-            if ($dm_margin) {
-              $pr = ($bmlip->product_lp * $bmlip->product_quantity) * ($dm_margin->dm_margin_percentage / 100);
-              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-              $dmledgerbal = $dmledger->balance + $pr;
-              $dmledger->balance = $dmledgerbal;
-              $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-              $pr = 0;
-            }
-          }
-
-          foreach ($barter->barterHaveLp as $bhl) {
-
-            if(($BPledger->balance - $bhl->lp) >= $tempLP){
-
-              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', $bhl->lp, 'Barter Sell LP to Person', $BPledger->balance - $bhl->lp, $barter->person_id);
-              $BPledger->balance = $BPledger->balance - $bhl->lp;
+              $BPledger->balance = $BPledger->balance - $pr;
               $BPledger->save();
 
-              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', $bhl->lp, 'Barter Buy LP to Person', $ledgerbm->balance + $bhl->lp, $bm->person_id);
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
+              $pr = 0;
+            }else{
+              return response()->json("Bater Have Person Does Not Have Sufficient Balance To Deduct", 400); 
+            }
+            $pr = ($bmlis->no_of_days * $bmlis->service_lp) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $ledgerbm->balance >= $pr) {
+              
+              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
+              $dmledgerbal = $dmledger->balance + $pr;
+              $dmledger->balance = $dmledgerbal;
+              $dmledger->save();
+
+              $ledgerbm->balance = $ledgerbm->balance - $pr;
+              $ledgerbm->save();
+
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
+              $pr = 0;
+            }else{
+              return response()->json("Bater Match Person Does Not Have Sufficient Balance To Deduct", 400); 
+            }
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bhs->service_lp * $bhs->no_of_days), 'Barter ID: '.$barter->id.' Buy Service '.$bhs->personService->service->name.' With No Of Days '.$bhs->no_of_days.' From '.$person->first_name.' '.$person->last_name, $ledgerbm->balance + ($bhs->service_lp * $bhs->no_of_days), $bm->person_id);
+
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bhs->no_of_days * $bhs->service_lp), 'Barter ID: '.$barter->id.' Sell Service '.$bhs->personService->service->name .' With No Of Days '.$bhs->no_of_days.' To '.$bm_person->first_name.' '.$bm_person->last_name, $BPledger->balance - ($bhs->no_of_days * $bhs->service_lp), $barter->person_id);
+
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter ID: '.$barter->id.' Sell Service '.$bmlis->service->name.' With No Of Days'.$bmlis->no_of_days.' To '. $person->first_name.' '.$person->last_name, $ledgerbm->balance - ($bmlis->no_of_days * $bmlis->service_lp), $bm->person_id);
+
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter ID: '.$barter->id.' Buy Service '.$bmlis->service->name.' With No Of Days'.$bmlis->no_of_days.' From '.$bmlis->barterMatch->person->first_name.' '.$bmlis->barterMatch->person->last_name, $BPledger->balance + ($bmlis->no_of_days * $bmlis->service_lp), $barter->person_id);
+          }
+          
+          foreach ($barter->barterHaveLp as $bhl) {
+
+            if (($BPledger->balance - $bhl->lp) >= $tempLP) {
+
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', $bhl->lp, 'Barter ID: '.$barter->id.' Buy LP '.$bhl->lp.' From '.$person->first_name.' '.$person->last_name, $ledgerbm->balance + $bhl->lp, $bm->person_id);
               $ledgerbm->balance = $ledgerbm->balance + $bhl->lp;
               $ledgerbm->save();
 
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', $bhl->lp, 'Barter ID: '.$barter->id.' Sell LP '. $bhl->lp . ' To'.$bmlis->barterMatch->person->first_name.' '.$bmlis->barterMatch->person->last_name, $BPledger->balance - $bhl->lp, $barter->person_id);
+              $BPledger->balance = $BPledger->balance - $bhl->lp;
+              $BPledger->save();
+
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter ID: '.$barter->id.' Buy Service '.$bmlis->service->name.' With No Of Days'.$bmlis->no_of_days.' From '.$bmlis->barterMatch->person->first_name.' '.$bmlis->barterMatch->person->last_name, $ledgerbm->balance + ($bmlis->no_of_days * $bmlis->service_lp), $barter->person_id);
+              
+
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter ID: '.$barter->id.' Sell Service '.$bmlis->service->name.' With No Of Days '.$bmlis->no_of_days.' To '.$person->first_name.' '.$person->last_name, $BPledger->balance - ($bmlis->no_of_days * $bmlis->service_lp), $bm->person_id);
+
               if ($dm_margin) {
-                $pr = $bhl->lp * ($dm_margin->dm_margin_percentage / 100);
+                $pr = ($bmlis->no_of_days * $bmlis->service_lp) * ($dm_margin->dm_margin_percentage / 100);
                 $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
                 $dmledgerbal = $dmledger->balance + $pr;
                 $dmledger->balance = $dmledgerbal;
                 $dmledger->save();
-                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
+
+                $ledgerbm->balance = $ledgerbm->balance - $pr;
+                $ledgerbm->save();
+
+                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
                 $pr = 0;
               }
+            } else {
+              return response()->json("Barter Person Have Not Enough LP.", 400);
+            }
+          }
+        }
+        $bmlilp = $bm->barterMatchLocalInventoryLps;
+        if ($bmlilp) {
+          foreach ($barter->barterHaveProducts as $bhp) {
+            if (($ledgerbm->balance - $bmlilp->lp) >= $tempLP) {
+
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlilp->lp, 'Barter ID: '.$barter->id.' Sell Lp '.$bmlilp->lp.' To '.$person->first_name.' '.$person->last_name, $ledgerbm->balance - $bmlilp->lp, $bm->person_id);
+
+              $ledgerbm->balance = $ledgerbm->balance - $bmlilp->lp;
+              $ledgerbm->save();
+
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlilp->lp, 'Barter ID: '.$barter->id.' Buy LP '.$bmlilp->lp.' From '.$bmlilp->barterMatch->person->first_name.' '.$bmlilp->barterMatch->person->last_name, $BPledger->balance + $bmlilp->lp, $barter->person_id);
+              
+              $BPledger->balance = $BPledger->balance + $bmlilp->lp;
+              $BPledger->save();
+
+            } else {
+              return response()->json("Match Person Have Not Enough LP.", 400);
+            }
+          }
+
+          foreach ($barter->barterHaveServices as $bhs) {
+
+            if (($ledgerbm->balance - $bmlilp->lp) >= $tempLP) {
+
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlilp->lp, 'Barter ID: '.$barter->id.' Sell LP '.$bmlilp->lp.' To '.$person->first_name.' '.$person->last_name, $ledgerbm->balance - $bmlilp->lp, $bm->person_id);
+
+              $ledgerbm->balance = $ledgerbm->balance - $bmlilp->lp;
+              $ledgerbm->save();
+
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlilp->lp, 'Barter ID: '.$barter->id .' Buy LP '.$bmlilp->lp.' From '.$bmlilp->barterMatch->person->first_name.' '.$bmlilp->barterMatch->person->last_name, $BPledger->balance + $bmlilp->lp, $barter->person_id);
+
+              $BPledger->balance = $BPledger->balance + $bmlilp->lp;
+              $BPledger->save();
+
+            } else {
+              return response()->json("Match Person Have Not Enough LP.", 400);
+            }
+          }
+
+          foreach ($barter->barterHaveLp as $bhl) {
+            if ((($ledgerbm->balance - $bmlilp->lp) >= $tempLP) && (($BPledger->balance - $bhl->lp) >= $tempLP)) {
+
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlilp->lp, 'Barter ID:'.$barter->id.' Sell LP '.$bmlilp->lp.' To'.$person->first_name.' '.$person->last_name, $ledgerbm->balance - $bmlilp->lp, $bm->person_id);
+              
+              $ledgerbm->balance = $ledgerbm->balance - $bmlilp->lp;
+              $ledgerbm->save();
+
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlilp->lp, 'Barter ID:'.$barter->id.' Buy LP '.$bmlilp->lp.' From '.$bmlilp->barterMatch->person->first_name.' '.$bmlilp->barterMatch->person->last_name , $BPledger->balance + $bmlilp->lp, $barter->person_id);
+              
+              $BPledger->balance = $BPledger->balance + $bmlilp->lp;
+              $BPledger->save();
+
+            } else {
+              return response()->json("Barter Person Or Match Person Have Not Enough LP.", 400);
+            }
+          }
+        }
+      }
+    } else if (count($BMLIP)) {
+      // Log::info("BMLIP " . $barter->id);
+      $BM = BarterMatch::orWhere([["local_inventory_type", "product"], ["barter_id", $barter->id]])->get();
+
+      foreach ($BM as $bm) {
+        $dmledgerbm = Ledger::find($dm->ledger_id);
+        $bm_person = Person::find($bm->person_id);
+        $ledgerbm = Ledger::find($bm_person->ledger_id);
+
+        $bmlip = $bm->barterMatchLocalInventoryProducts;
+        if ($bmlip) {
+
+          foreach ($barter->barterHaveProducts as $bhp) {
+
+            $BHPP = PersonProduct::find($bhp->person_product_id);
+            
+            $pr = ($bhp->product_lp * $bhp->quantity) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $BPledger->balance >= $pr ) {
+              
+              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
+              $dmledgerbal = $dmledger->balance + $pr;
+              $dmledger->balance = $dmledgerbal;
+              $dmledger->save();
+
+              $BPledger->balance = $BPledger->balance - $pr;
+              $BPledger->save();
+
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
+              $pr = 0;
+            }else{
+              return response()->json("Bater Have Person Does Not Have Sufficient Balance To Deduct", 400); 
+            }
+
+            $pr = ($bmlip->product_lp * $bmlip->product_quantity) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $ledgerbm->balance >= $pr) {
+              
+              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
+              $dmledgerbal = $dmledger->balance + $pr;
+              $dmledger->balance = $dmledgerbal;
+              $dmledger->save();
+
+              $ledgerbm->balance = $ledgerbm->balance - $pr;
+              $ledgerbm->save();
+
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
+              $pr = 0;
+            }else{
+              return response()->json("Bater Match Person Does Not Have Sufficient Balance To Deduct", 400); 
+            }
+
+
+            $BHPP->quantity_available = $BHPP->quantity_available - $bhp->quantity;
+            $BHPP->save();
+
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bhp->product_lp * $bhp->quantity), 'Barter ID: '.$barter->id.' Sell Product '.$bhp->personProduct->product->name.' With Quantity '.$bhp->quantity.' To '.$bmlip->barterMatch->person->first_name.' '.$bmlip->barterMatch->person->last_name, $BPledger->balance - ($bhp->product_lp * $bhp->quantity), $barter->person_id);
+
+            
+
+            $mpp = PersonProduct::where("product_id", $BHPP->product_id)->where("person_id", $bm->person_id)->first();
+            if ($mpp) {
+              $mpp->quantity_available = $mpp->quantity_available + $bhp->quantity;
+              $mpp->save();
+            } else {
+              $pp = new PersonProduct();
+              $pp->geography_id = $BHPP->geography_id;
+              $pp->geography_type = $BHPP->geography_type;
+              $pp->dm_id = $BHPP->dm_id;
+              $pp->person_id = $bm->person_id;
+              $pp->product_id = $BHPP->product_id;
+              $pp->unit_id = $BHPP->unit_id;
+              $pp->quantity_available = $bhp->quantity;
+              $pp->product_lp = $BHPP->product_lp;
+              $pp->active_on_barterplace = $BHPP->active_on_barterplace;
+              $pp->save();
+            }
+            
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bhp->quantity * $bhp->product_lp), 'Barter ID: '.$barter->id.' Buy Product '.$bhp->personProduct->product->name.' With Quantity '.$bhp->quantity.' From '.$person->first_name.' '.$person->last_name, $ledgerbm->balance + ($bhp->quantity * $bhp->product_lp), $bm->person_id);
+            
+
+
+            $BMLIPP = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $bm->person_id)->first();
+            $BMLIPP->quantity_available = $BMLIPP->quantity_available - $bmlip->product_quantity;
+            $BMLIPP->save();
+
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bmlip->product_lp * $bmlip->product_quantity), 'Barter ID: '.$barter->id.' Sell Product '.$bmlip->product->name.' With Quantity '.$bmlip->product_quantity.' To '.$person->first_name.' '.$person->last_name, $ledgerbm->balance - ($bmlip->product_lp * $bmlip->product_quantity), $bm->person_id);
+            
+
+            $mpp = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $barter->person_id)->first();
+            if ($mpp) {
+              $mpp->quantity_available = $mpp->quantity_available + $bmlip->product_quantity;
+              $mpp->save();
+            } else {
+              $pp = new PersonProduct();
+              $pp->geography_id = $BMLIPP->geography_id;
+              $pp->geography_type = $BMLIPP->geography_type;
+              $pp->dm_id = $BMLIPP->dm_id;
+              $pp->person_id = $barter->person_id;
+              $pp->product_id = $BMLIPP->product_id;
+              $pp->unit_id = $BMLIPP->unit_id;
+              $pp->quantity_available = $bmlip->product_quantity;
+              $pp->product_lp = $BMLIPP->product_lp;
+              $pp->active_on_barterplace = $BMLIPP->active_on_barterplace;
+              $pp->save();
+            }
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bmlip->product_quantity * $bmlip->product_lp), 'Barter ID: '.$barter->id.' Buy Product '.$bmlip->product->name.' With Quantity '.$bmlip->product_quantity.' From '.$bmlip->barterMatch->person->first_name.' '.$bmlip->barterMatch->person->last_name, $BPledger->balance + ($bmlip->product_quantity * $bmlip->product_lp), $barter->person_id);
+          }
+
+          foreach ($barter->barterHaveServices as $bhs) {
+            $pr = ($bhs->service_lp * $bhs->no_of_days) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $BPledger->balance >= $pr ) {
+              
+              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
+              $dmledgerbal = $dmledger->balance + $pr;
+              $dmledger->balance = $dmledgerbal;
+              $dmledger->save();
+
+              $BPledger->balance = $BPledger->balance - $pr;
+              $BPledger->save();
+
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
+              $pr = 0;
+            }else{
+              return response()->json("Bater Have Person Does Not Have Sufficient Balance To Deduct", 400); 
+            }
+
+            $pr = ($bmlip->product_lp * $bmlip->product_quantity) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $ledgerbm->balance >= $pr) {
+              
+              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
+              $dmledgerbal = $dmledger->balance + $pr;
+              $dmledger->balance = $dmledgerbal;
+              $dmledger->save();
+
+              $ledgerbm->balance = $ledgerbm->balance - $pr;
+              $ledgerbm->save();
+
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
+              $pr = 0;
+            }else{
+              return response()->json("Bater Match Person Does Not Have Sufficient Balance To Deduct", 400); 
+            }
+
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bhs->service_lp * $bhs->no_of_days), 'Barter ID: '.$barter->id.' Buy Service '.$bhs->personService->service->name.' With No Of Days'.$bhs->no_of_days.' From'.$person->first_name.' '.$person->last_name, $ledgerbm->balance + ($bhs->service_lp * $bhs->no_of_days), $bm->person_id);
+
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bhs->no_of_days * $bhs->service_lp), 'Barter ID: '.$barter->id.' Sell Service '.$bhs->personService->service->name.' With No Of Days '.$bhs->no_of_days.' To '.$bm_person->first_name.' '.$bm_person->last_name, $BPledger->balance - ($bhs->no_of_days * $bhs->service_lp), $barter->person_id);
+
+            $BMLIPP = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $bm->person_id)->first();
+            $BMLIPP->quantity_available = $BMLIPP->quantity_available - $bmlip->product_quantity;
+            $BMLIPP->save();
+
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bmlip->product_lp * $bmlip->product_quantity), 'Barter ID: '.$barter->id.' Sell Product '.$bmlip->product->name.' With Quantity '.$bmlip->product_quantity.' To '.$person->first_name.' '.$person->last_name, $ledgerbm->balance - ($bmlip->product_lp * $bmlip->product_quantity), $bm->person_id);
+            
+
+            $mpp = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $barter->person_id)->first();
+            if ($mpp) {
+              $mpp->quantity_available = $mpp->quantity_available + $bmlip->product_quantity;
+              $mpp->save();
+            } else {
+              $pp = new PersonProduct();
+              $pp->geography_id = $BMLIPP->geography_id;
+              $pp->geography_type = $BMLIPP->geography_type;
+              $pp->dm_id = $BMLIPP->dm_id;
+              $pp->person_id = $barter->person_id;
+              $pp->product_id = $BMLIPP->product_id;
+              $pp->unit_id = $BMLIPP->unit_id;
+              $pp->quantity_available = $bmlip->product_quantity;
+              $pp->product_lp = $BMLIPP->product_lp;
+              $pp->active_on_barterplace = $BMLIPP->active_on_barterplace;
+              $pp->save();
+            }
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bmlip->product_quantity * $bmlip->product_lp), 'Barter ID: '.$barter->id.' Buy Product '.$bmlip->product->name.' With Quantity '.$bmlip->product_quantity.' From '.$bmlip->barterMatch->person->first_name.' '.$bmlip->barterMatch->person->last_name, $BPledger->balance - ($bmlip->product_quantity * $bmlip->product_lp), $barter->person_id);            
+          }
+
+          foreach ($barter->barterHaveLp as $bhl) {
+
+            if (($BPledger->balance - $bhl->lp) >= $tempLP) {
+
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', $bhl->lp, 'Barter ID: '.$barter->id.'Sell LP '.$bhl->lp.' To '.$bmlip->barterMatch->person->first_name.' '.$bmlip->barterMatch->person->last_name, $BPledger->balance - $bhl->lp, $barter->person_id);
+             
+              $BPledger->balance = $BPledger->balance - $bhl->lp;
+              $BPledger->save();
+
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', $bhl->lp, 'Barter ID: '.$barter->id.' Buy LP '.$bhl->lp.' From '.$person->first_name.' '.$person->last_name, $ledgerbm->balance + $bhl->lp, $bm->person_id);
+
+              $ledgerbm->balance = $ledgerbm->balance + $bhl->lp;
+              $ledgerbm->save();
+
 
               $BMLIPP = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $bm->person_id)->first();
               $BMLIPP->quantity_available = $BMLIPP->quantity_available - $bmlip->product_quantity;
               $BMLIPP->save();
 
-              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bmlip->product_lp * $bmlip->product_quantity), 'Barter Sell Product to Person', $ledgerbm->balance + ($bmlip->product_lp * $bmlip->product_quantity), $bm->person_id);
-              // $ledgerbm->balance = $ledgerbm->balance + ($bmlip->product_lp * $bmlip->product_quantity);
-              // $ledgerbm->save();
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bmlip->product_lp * $bmlip->product_quantity), 'Barter ID: '.$barter->id.' Sell Product '.$bmlip->product->name.' With Quantity '.$bmlip->product_quantity.' To '. $person->first_name.' '.$person->last_name, $ledgerbm->balance - ($bmlip->product_lp * $bmlip->product_quantity), $bm->person_id);
 
               $mpp = PersonProduct::where("product_id", $bmlip->product_id)->where("person_id", $barter->person_id)->first();
               if ($mpp) {
@@ -791,9 +965,7 @@ class BarterMatchController extends Controller
                 $pp->active_on_barterplace = $BMLIPP->active_on_barterplace;
                 $pp->save();
               }
-              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bmlip->product_quantity * $bmlip->product_lp), 'Barter Buy Product to Person', $BPledger->balance - ($bmlip->product_quantity * $bmlip->product_lp), $barter->person_id);
-              // $BPledger->balance = $BPledger->balance - ($bmlip->product_quantity * $bmlip->product_lp);
-              // $BPledger->save();
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bmlip->product_quantity * $bmlip->product_lp), 'Barter ID: '.$barter->id.' Buy Product '.$bmlip->product->name.' With Quantity '.$bmlip->product_quantity.'  From '.$bmlip->barterMatch->person->first_name.' '.$bmlip->barterMatch->person->last_name, $BPledger->balance + ($bmlip->product_quantity * $bmlip->product_lp), $barter->person_id);
 
               if ($dm_margin) {
                 $pr = ($bmlip->product_lp * $bmlip->product_quantity) * ($dm_margin->dm_margin_percentage / 100);
@@ -801,17 +973,20 @@ class BarterMatchController extends Controller
                 $dmledgerbal = $dmledger->balance + $pr;
                 $dmledger->balance = $dmledgerbal;
                 $dmledger->save();
-                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
+
+                $ledgerbm->balance = $ledgerbm->balance - $pr;
+                $ledgerbm->save();
+
+                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
                 $pr = 0;
               }
-            }else{
-              return response()->json("Barter Person Have Not Enough LP.",400);
+            } else {
+              return response()->json("Barter Person Have Not Enough LP.", 400);
             }
           }
         }
       }
     } else if (count($BMLIS)) {
-      Log::info("BMLIS ".$barter->id);
       $BM = BarterMatch::orWhere([["local_inventory_type", "service"], ["barter_id", $barter->id]])->get();
 
       foreach ($BM as $bm) {
@@ -823,22 +998,44 @@ class BarterMatchController extends Controller
         if ($bmlis) {
           foreach ($barter->barterHaveProducts as $bhp) {
             $BHPP = PersonProduct::find($bhp->person_product_id);
-            $BHPP->quantity_available = $BHPP->quantity_available - $bhp->quantity;
-            $BHPP->save();
-
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bhp->product_lp * $bhp->quantity), 'Barter Sell Product to Person', $BPledger->balance + ($bhp->product_lp * $bhp->quantity), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance + ($bhp->product_lp * $bhp->quantity);
-            // $BPledger->save();
-
-            if ($dm_margin) {
-              $pr = ($bhp->product_lp * $bhp->quantity) * ($dm_margin->dm_margin_percentage / 100);
+            $pr = ($bhp->product_lp * $bhp->quantity) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $BPledger->balance >= $pr) {
+              
               $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
               $dmledgerbal = $dmledger->balance + $pr;
               $dmledger->balance = $dmledgerbal;
               $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
+
+              $BPledger->balance = $BPledger->balance - $pr;
+              $BPledger->save();
+
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
               $pr = 0;
+            }else{
+              return response()->json("Bater Have Person Does Not Have Sufficient Balance To Deduct", 400); 
             }
+            $pr = ($bmlis->no_of_days * $bmlis->service_lp) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $ledgerbm->balance >= $pr) {
+              
+              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
+              $dmledgerbal = $dmledger->balance + $pr;
+              $dmledger->balance = $dmledgerbal;
+              $dmledger->save();
+
+              $ledgerbm->balance = $ledgerbm->balance - $pr;
+              $ledgerbm->save();
+
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
+              $pr = 0;
+            }else{
+              return response()->json("Bater Match Person Does Not Have Sufficient Balance To Deduct", 400); 
+            }
+
+            $BHPP->quantity_available = $BHPP->quantity_available - $bhp->quantity;
+            $BHPP->save();
+
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bhp->product_lp * $bhp->quantity), 'Barter ID: '.$barter->id.' Sell Product '.$bhp->personProduct->product->name.' With Quantity '.$bhp->quantity.' To '.$bmlis->barterMatch->person->first_name.' '.$bmlis->barterMatch->person->last_name, $BPledger->balance - ($bhp->product_lp * $bhp->quantity), $barter->person_id);
+
 
             $mpp = PersonProduct::where("product_id", $BHPP->product_id)->where("person_id", $bm->person_id)->first();
             if ($mpp) {
@@ -857,95 +1054,71 @@ class BarterMatchController extends Controller
               $pp->active_on_barterplace = $BHPP->active_on_barterplace;
               $pp->save();
             }
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bhp->quantity * $bhp->product_lp), 'Barter Buy Product to Person', $ledgerbm->balance - ($bhp->quantity * $bhp->product_lp), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance - ($bhp->quantity * $bhp->product_lp);
-            // $ledgerbm->save();
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bhp->quantity * $bhp->product_lp), 'Barter ID: '.$barter->id.' Buy Product '.$bhp->personProduct->product->name.' With Quantity: '.$bhp->quantity.' From '.$person->first_name.' '.$person->last_name, $ledgerbm->balance - ($bhp->quantity * $bhp->product_lp), $bm->person_id);
+           
 
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter Sell Service to Person', $ledgerbm->balance + ($bmlis->no_of_days * $bmlis->service_lp), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance + ($bmlis->no_of_days * $bmlis->service_lp);
-            // $ledgerbm->save();
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter ID: '.$barter->id.' Buy Service '.$bmlis->service->name.' With No. Of Days '.$bmlis->no_of_days.' From '.$bm_person->first_name.' '.$bm_person->last_name, $BPledger->balance + ($bmlis->no_of_days * $bmlis->service_lp), $person->id);
 
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter Buy Service to Person', $BPledger->balance - ($bmlis->no_of_days * $bmlis->service_lp), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance - ($bmlis->no_of_days * $bmlis->service_lp);
-            // $BPledger->save();
-
-            if ($dm_margin) {
-              $pr = ($bmlis->no_of_days * $bmlis->service_lp) * ($dm_margin->dm_margin_percentage / 100);
-              $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-              $dmledgerbal = $dmledger->balance + $pr;
-              $dmledger->balance = $dmledgerbal;
-              $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-              $pr = 0;
-            }
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter ID: '.$barter->id.' Sell Service '.$bmlis->service->name.' With No. Of Days '.$bmlis->no_of_days.' To '.$person->first_name.' '.$person->last_name, $ledgerbm->balance - ($bmlis->no_of_days * $bmlis->service_lp), $bm->person_id);
           }
           foreach ($barter->barterHaveServices as $bhs) {
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bhs->service_lp * $bhs->no_of_days), 'Barter Sell Service to Person', $BPledger->balance + ($bhs->service_lp * $bhs->no_of_days), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance + ($bhs->service_lp * $bhs->no_of_days);
-            // $BPledger->save();
-
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bhs->no_of_days * $bhs->service_lp), 'Barter Sell Product to Person', $ledgerbm->balance - ($bhs->no_of_days * $bhs->service_lp), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance - ($bhs->no_of_days * $bhs->service_lp);
-            // $ledgerbm->save();
-
-            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter Sell Service to Person', $ledgerbm->balance + ($bmlis->no_of_days * $bmlis->service_lp), $bm->person_id);
-            // $ledgerbm->balance = $ledgerbm->balance + ($bmlis->no_of_days * $bmlis->service_lp);
-            // $ledgerbm->save();
-
-            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter Buy Service to Person', $BPledger->balance - ($bmlis->no_of_days * $bmlis->service_lp), $barter->person_id);
-            // $BPledger->balance = $BPledger->balance - ($bmlis->no_of_days * $bmlis->service_lp);
-            // $BPledger->save();
-
-
-            if ($dm_margin) {
-              $pr = ($bhs->service_lp * $bhs->no_of_days) * ($dm_margin->dm_margin_percentage / 100);
+            $pr = ($bhs->service_lp * $bhs->no_of_days) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $BPledger->balance >= $pr) {
+              
               $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
               $dmledgerbal = $dmledger->balance + $pr;
               $dmledger->balance = $dmledgerbal;
               $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
+
+              $BPledger->balance = $BPledger->balance - $pr;
+              $BPledger->save();
+
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
               $pr = 0;
+            }else{
+              return response()->json("Bater Have Person Does Not Have Sufficient Balance To Deduct", 400); 
             }
 
-            if ($dm_margin) {
-              $pr = ($bmlis->no_of_days * $bmlis->service_lp) * ($dm_margin->dm_margin_percentage / 100);
+            $pr = ($bmlis->no_of_days * $bmlis->service_lp) * ($dm_margin->dm_margin_percentage / 100);
+            if ($dm_margin && $ledgerbm->balance >= $pr) {
+              
               $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
               $dmledgerbal = $dmledger->balance + $pr;
               $dmledger->balance = $dmledgerbal;
               $dmledger->save();
-              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
+
+              $ledgerbm->balance = $ledgerbm->balance - $pr;
+              $ledgerbm->save();
+
+              sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
               $pr = 0;
+            }else{
+              return response()->json("Bater Match Person Does Not Have Sufficient Balance To Deduct", 400); 
             }
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bhs->service_lp * $bhs->no_of_days), 'Barter ID: '.$barter->id.' Buy Service '.$bhs->personService->service->name.' With No Of Days '.$bhs->no_of_days.' From '.$person->first_name.' '.$person->last_name, $ledgerbm->balance + ($bhs->service_lp * $bhs->no_of_days), $bm->person_id);
+
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bhs->no_of_days * $bhs->service_lp), 'Barter ID: '.$barter->id.' Sell Service '.$bhs->personService->service->name .' With No Of Days '.$bhs->no_of_days.' To '.$bm_person->first_name.' '.$bm_person->last_name, $BPledger->balance - ($bhs->no_of_days * $bhs->service_lp), $barter->person_id);
+
+            $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter ID: '.$barter->id.' Sell Service '.$bmlis->service->name.' With No Of Days'.$bmlis->no_of_days.' To '. $person->first_name.' '.$person->last_name, $ledgerbm->balance - ($bmlis->no_of_days * $bmlis->service_lp), $bm->person_id);
+
+            $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter ID: '.$barter->id.' Buy Service '.$bmlis->service->name.' With No Of Days'.$bmlis->no_of_days.' From '.$bmlis->barterMatch->person->first_name.' '.$bmlis->barterMatch->person->last_name, $BPledger->balance + ($bmlis->no_of_days * $bmlis->service_lp), $barter->person_id);
           }
           foreach ($barter->barterHaveLp as $bhl) {
 
-            if(($BPledger->balance - $bhl->lp) >= $tempLP){
+            if (($BPledger->balance - $bhl->lp) >= $tempLP) {
 
-              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', $bhl->lp, 'Barter Sell LP to Person', $ledgerbm->balance + $bhl->lp, $bm->person_id);
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', $bhl->lp, 'Barter ID: '.$barter->id.' Buy LP '.$bhl->lp.' From '.$person->first_name.' '.$person->last_name, $ledgerbm->balance + $bhl->lp, $bm->person_id);
               $ledgerbm->balance = $ledgerbm->balance + $bhl->lp;
               $ledgerbm->save();
 
-              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', $bhl->lp, 'Barter Buy LP to Person', $BPledger->balance - $bhl->lp, $barter->person_id);
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', $bhl->lp, 'Barter ID: '.$barter->id.' Sell LP '. $bhl->lp . ' To'.$bmlis->barterMatch->person->first_name.' '.$bmlis->barterMatch->person->last_name, $BPledger->balance - $bhl->lp, $barter->person_id);
               $BPledger->balance = $BPledger->balance - $bhl->lp;
               $BPledger->save();
 
-              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter Sell Service to Person', $ledgerbm->balance + ($bmlis->no_of_days * $bmlis->service_lp), $bm->person_id);
-              // $ledgerbm->balance = $ledgerbm->balance + ($bmlis->no_of_days * $bmlis->service_lp);
-              // $ledgerbm->save();
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter ID: '.$barter->id.' Buy Service '.$bmlis->service->name.' With No Of Days'.$bmlis->no_of_days.' From '.$bmlis->barterMatch->person->first_name.' '.$bmlis->barterMatch->person->last_name, $ledgerbm->balance + ($bmlis->no_of_days * $bmlis->service_lp), $barter->person_id);
+              
 
-              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter Buy Service to Person', $BPledger->balance - ($bmlis->no_of_days * $bmlis->service_lp), $barter->person_id);
-              // $BPledger->balance = $BPledger->balance - ($bmlis->no_of_days * $bmlis->service_lp);
-              // $BPledger->save();
-
-              if ($dm_margin) {
-                $pr = $bhl->lp * ($dm_margin->dm_margin_percentage / 100);
-                $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-                $dmledgerbal = $dmledger->balance + $pr;
-                $dmledger->balance = $dmledgerbal;
-                $dmledger->save();
-                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-                $pr = 0;
-              }
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bmlis->no_of_days * $bmlis->service_lp), 'Barter ID: '.$barter->id.' Sell Service '.$bmlis->service->name.' With No Of Days '.$bmlis->no_of_days.' To '.$person->first_name.' '.$person->last_name, $BPledger->balance - ($bmlis->no_of_days * $bmlis->service_lp), $bm->person_id);
 
               if ($dm_margin) {
                 $pr = ($bmlis->no_of_days * $bmlis->service_lp) * ($dm_margin->dm_margin_percentage / 100);
@@ -953,17 +1126,21 @@ class BarterMatchController extends Controller
                 $dmledgerbal = $dmledger->balance + $pr;
                 $dmledger->balance = $dmledgerbal;
                 $dmledger->save();
-                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
+
+                $ledgerbm->balance = $ledgerbm->balance - $pr;
+                $ledgerbm->save();
+
+                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
                 $pr = 0;
               }
-            }else{
-              return response()->json("Barter Person Have Not Enough LP.",400);
+            } else {
+              return response()->json("Barter Person Have Not Enough LP.", 400);
             }
           }
         }
       }
     } else if (count($BMLIL)) {
-      Log::info("BMLIL ".$barter->id);
+      // Log::info("BMLIL " . $barter->id);
       $BM = BarterMatch::orWhere([["local_inventory_type", "lp"], ["barter_id", $barter->id]])->get();
 
       foreach ($BM as $bm) {
@@ -975,15 +1152,13 @@ class BarterMatchController extends Controller
         if ($bmlil) {
           foreach ($barter->barterHaveProducts as $bhp) {
 
-            if(($ledgerbm->balance - $bmlil->lp) >= $tempLP){
+            if (($ledgerbm->balance - $bmlil->lp) >= $tempLP) {
 
               $BHPP = PersonProduct::find($bhp->person_product_id);
               $BHPP->quantity_available = $BHPP->quantity_available - $bhp->quantity;
               $BHPP->save();
 
-              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bhp->product_lp * $bhp->quantity), 'Barter Sell Product to Person', $BPledger->balance + ($bhp->product_lp * $bhp->quantity), $barter->person_id);
-              // $BPledger->balance = $BPledger->balance + ($bhp->product_lp * $bhp->quantity);
-              // $BPledger->save();
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bhp->product_lp * $bhp->quantity), 'Barter ID: '.$barter->id.' Sell Product '.$bhp->personProduct->product->name.' With Quantity '.$bhp->quantity.' To '.$bmlil->barterMatch->person->first_name.' '.$bmlil->barterMatch->person->last_name, $BPledger->balance - ($bhp->product_lp * $bhp->quantity), $barter->person_id);
 
               if ($dm_margin) {
                 $pr = ($bhp->product_lp * $bhp->quantity) * ($dm_margin->dm_margin_percentage / 100);
@@ -991,7 +1166,11 @@ class BarterMatchController extends Controller
                 $dmledgerbal = $dmledger->balance + $pr;
                 $dmledger->balance = $dmledgerbal;
                 $dmledger->save();
-                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
+
+                $BPledger->balance = $BPledger->balance - $pr;
+                $BPledger->save();
+
+                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
                 $pr = 0;
               }
 
@@ -1012,43 +1191,29 @@ class BarterMatchController extends Controller
                 $pp->active_on_barterplace = $BHPP->active_on_barterplace;
                 $pp->save();
               }
-              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bhp->quantity * $bhp->product_lp), 'Barter Buy Product to Person', $ledgerbm->balance - ($bhp->quantity * $bhp->product_lp), $bm->person_id);
-              // $ledgerbm->balance = $ledgerbm->balance - ($bhp->quantity * $bhp->product_lp);
-              // $ledgerbm->save();
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bhp->quantity * $bhp->product_lp), 'Barter ID: '.$barter->id.' Buy Product '.$bhp->personProduct->product->name.' With Quantity '.$bhp->quantity.' From '.$person->first_name.' '.$person->last_name, $ledgerbm->balance + ($bhp->quantity * $bhp->product_lp), $bm->person_id);
+              
 
-              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlil->lp, 'Barter Sell Product to Person', $ledgerbm->balance - $bmlil->lp, $bm->person_id);
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlil->lp, 'Barter ID: '.$barter->id.' Sell LP '.$bmlil->lp.' To '.$person->first_name.' '.$person->last_name, $ledgerbm->balance - $bmlil->lp, $bm->person_id);
               $ledgerbm->balance = $ledgerbm->balance - $bmlil->lp;
               $ledgerbm->save();
 
-              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlil->lp, 'Barter Sell Product to Person', $BPledger->balance + $bmlil->lp, $barter->person_id);
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlil->lp, 'Barter ID: '.$barter->id.' Buy LP '.$bmlil->lp. ' From ' . $bm_person->first_name.' '.$bm_person->last_name, $BPledger->balance + $bmlil->lp, $barter->person_id);
               $BPledger->balance = $BPledger->balance + $bmlil->lp;
               $BPledger->save();
 
-              if ($dm_margin) {
-                $pr = $bmlil->lp * ($dm_margin->dm_margin_percentage / 100);
-                $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-                $dmledgerbal = $dmledger->balance + $pr;
-                $dmledger->balance = $dmledgerbal;
-                $dmledger->save();
-                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-                $pr = 0;
-              }
-            }else{
-              return response()->json("Match Person Have Not Enough LP.",400);
+            } else {
+              return response()->json("Match Person Have Not Enough LP.", 400);
             }
           }
 
           foreach ($barter->barterHaveServices as $bhs) {
 
-            if(($ledgerbm->balance - $bmlil->lp) >= $tempLP){
+            if (($ledgerbm->balance - $bmlil->lp) >= $tempLP) {
 
-              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', ($bhs->service_lp * $bhs->no_of_days), 'Barter Sell Service to Person', $BPledger->balance + ($bhs->service_lp * $bhs->no_of_days), $barter->person_id);
-              // $BPledger->balance = $BPledger->balance + ($bhs->service_lp * $bhs->no_of_days);
-              // $BPledger->save();
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', ($bhs->service_lp * $bhs->no_of_days), 'Barter ID: '.$barter->id.' Sell Service '.$bhs->personService->service->name.' With No Of Days '.$bhs->no_of_days.' To '.$bm_person->first_name.' '.$bm_person->last_name, $BPledger->balance - ($bhs->service_lp * $bhs->no_of_days), $barter->person_id);
 
-              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', ($bhs->no_of_days * $bhs->service_lp), 'Barter Buy Service to Person', $ledgerbm->balance - ($bhs->no_of_days * $bhs->service_lp), $bm->person_id);
-              // $ledgerbm->balance = $ledgerbm->balance - ($bhs->no_of_days * $bhs->service_lp);
-              // $ledgerbm->save();
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', ($bhs->no_of_days * $bhs->service_lp), 'Barter ID: '.$barter->id.' Buy Service '.$bhs->personService->service->name.' With No Of Days '.$bhs->no_of_days.' From'.$person->first_name.' '.$person->last_name, $ledgerbm->balance + ($bhs->no_of_days * $bhs->service_lp), $bm->person_id);
 
               if ($dm_margin) {
                 $pr = ($bhs->service_lp * $bhs->no_of_days) * ($dm_margin->dm_margin_percentage / 100);
@@ -1056,75 +1221,53 @@ class BarterMatchController extends Controller
                 $dmledgerbal = $dmledger->balance + $pr;
                 $dmledger->balance = $dmledgerbal;
                 $dmledger->save();
-                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
+
+                $BPledger->balance = $BPledger->balance - $pr;
+                $BPledger->save();
+
+                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile,$smsTempleteId);
                 $pr = 0;
               }
 
-              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlil->lp, 'Barter Sell Product to Person', $ledgerbm->balance - $bmlil->lp, $bm->person_id);
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlil->lp, 'Barter ID: '.$barter->id.' Sell LP '.$bmlil->lp.' To'.$person->first_name.' '.$person->last_name, $ledgerbm->balance - $bmlil->lp, $bm->person_id);
               $ledgerbm->balance = $ledgerbm->balance - $bmlil->lp;
               $ledgerbm->save();
 
-              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlil->lp, 'Barter Sell Product to Person', $BPledger->balance + $bmlil->lp, $barter->person_id);
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlil->lp, 'Barter ID: '.$barter->id.' Buy LP'.$bmlil->lp.' From '.$bm_person->first_name.' '.$bm_person->last_name, $BPledger->balance + $bmlil->lp, $barter->person_id);
               $BPledger->balance = $BPledger->balance + $bmlil->lp;
               $BPledger->save();
 
-              if ($dm_margin) {
-                $pr = $bmlil->lp * ($dm_margin->dm_margin_percentage / 100);
-                $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-                $dmledgerbal = $dmledger->balance + $pr;
-                $dmledger->balance = $dmledgerbal;
-                $dmledger->save();
-                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-                $pr = 0;
-              }
-            }else{
-              return response()->json("Match Person Have Not Enough LP.",400);
+            } else {
+              return response()->json("Match Person Have Not Enough LP.", 400);
             }
           }
 
           foreach ($barter->barterHaveLp as $bhl) {
 
-            if((($ledgerbm->balance - $bmlil->lp) >= $tempLP) && (($BPledger->balance - $bhl->lp) >= $tempLP)){
+            if ((($ledgerbm->balance - $bmlil->lp) >= $tempLP) && (($BPledger->balance - $bhl->lp) >= $tempLP)) {
 
-              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', $bhl->lp, 'Barter Sell LP to Person', $BPledger->balance - $bhl->lp, $barter->person_id);
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Dr', $bhl->lp, 'Barter ID: '.$barter->id.' Sell LP '.$bhl->lp.' To '.$bmlil->barterMatch->person->first_name.' '.$bmlil->barterMatch->person->last_name, $BPledger->balance - $bhl->lp, $barter->person_id);
+
               $BPledger->balance = $BPledger->balance - $bhl->lp;
               $BPledger->save();
 
-              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', $bhl->lp, 'Barter Buy LP to Person', $ledgerbm->balance + $bhl->lp, $bm->person_id);
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Cr', $bhl->lp, 'Barter ID: '.$barter->id.' Buy LP '.$bhl->lp.' From '.$person->first_name.' '.$person->last_name, $ledgerbm->balance + $bhl->lp, $bm->person_id);
+
               $ledgerbm->balance = $ledgerbm->balance + $bhl->lp;
               $ledgerbm->save();
 
 
-              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlil->lp, 'Barter Buy LP to Person', $ledgerbm->balance - $bmlil->lp, $bm->person_id);
+              $barter->createBarterLedgerTransactions('Success', $ledgerbm->id, 'Dr', $bmlil->lp, 'Barter ID: '.$barter->id.' Sell LP '.$bmlil->lp.' To '.$person->first_name.' '.$person->last_name, $ledgerbm->balance - $bmlil->lp, $bm->person_id);
+
               $ledgerbm->balance = $ledgerbm->balance - $bmlil->lp;
               $ledgerbm->save();
 
-              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlil->lp, 'Barter Sell LP to Person', $BPledger->balance + $bmlil->lp, $barter->person_id);
+              $barter->createBarterLedgerTransactions('Success', $BPledger->id, 'Cr', $bmlil->lp, 'Barter ID: '.$barter->id.' Buy LP '.$bmlil->lp.' From '.$bmlil->barterMatch->person->first_name.' '.$bmlil->barterMatch->person->last_name, $BPledger->balance + $bmlil->lp, $barter->person_id);
+
               $BPledger->balance = $BPledger->balance + $bmlil->lp;
               $BPledger->save();
-
-              if ($dm_margin) {
-                $pr = $bhl->lp * ($dm_margin->dm_margin_percentage / 100);
-                $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-                $dmledgerbal = $dmledger->balance + $pr;
-                $dmledger->balance = $dmledgerbal;
-                $dmledger->save();
-                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-                $pr = 0;
-              }
-
-
-              if ($dm_margin) {
-                $pr = $bmlil->lp * ($dm_margin->dm_margin_percentage / 100);
-                $barter->createBarterLedgerTransactions('Success', $dmledger->id, 'Cr', $pr, 'DM Margin Barter', $dmledger->balance + $pr, $dm->person_id);
-                $dmledgerbal = $dmledger->balance + $pr;
-                $dmledger->balance = $dmledgerbal;
-                $dmledger->save();
-                sendSMS('Barter ID: ' . $barter->id . ' is complete. Your account is Credited with ' . $pr, $dm->mobile);
-                $pr = 0;
-              }
-            }else{
-              return response()->json("Barter Person Or Match Person Have Not Enough LP.",400);
+            } else {
+              return response()->json("Barter Person Or Match Person Have Not Enough LP.", 400);
             }
           }
         }

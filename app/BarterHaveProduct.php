@@ -12,7 +12,6 @@ class BarterHaveProduct extends Model
 
     public function barter()
     {
-        
     	return $this->belongsTo('App\Barter','barter_id');
     }
     public function personProduct()

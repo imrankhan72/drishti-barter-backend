@@ -102,8 +102,16 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasMany('App\UserProduct','user_id');
         
     }
+    public function tejasProductSellRequestApprovedBy()
+    {
+        return $this->hasMany('App\TejasProductSellRequest','approved_by'); 
+    }
     public function ledger(){
         return $this->belongsTo('App\Ledger', 'ledger_id');
+    }
+    public function drishteeMitra()
+    {
+        return $this->hasMany('App\DrishteeMitra','added_by');
     }
 
     /**

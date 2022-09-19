@@ -16,7 +16,7 @@ class BarterMatchLocalInventoryLp extends Model
 	}
 	public function barterMatch()
 	{
-		return $this->hasOne('App\BarterMatch','barter_match_id');
+		return $this->belongsTo('App\BarterMatch','barter_match_id');
 		
 	}
 }

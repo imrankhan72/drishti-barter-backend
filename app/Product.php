@@ -70,7 +70,10 @@ class Product extends Model
     return $this->hasMany('App\SellRequestProduct','product_id');
     
   }
-
+  public function userProductLog()
+  {
+    return $this->hasMany('App\UserProductLog','product_id');
+  }
   /**
    *
    * @param  \Illuminate\Http\Request $request

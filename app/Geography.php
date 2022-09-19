@@ -9,7 +9,7 @@ class Geography extends Model
 {
     use SoftDeletes;
 
-    protected $fillable = ['name','type','parent_id','is_active','parent_pseudo_id','remote_id','state','district'];
+    protected $fillable = ['name','type','parent_id','is_active','parent_pseudo_id','remote_id','state','district','block'];
 
     protected $dates= ['created_at','updated_at','deleted_at'];
 
@@ -51,6 +51,10 @@ class Geography extends Model
     {
         $geography = Geography::where('is_active',true)->whereDate('created_at',[$data['from_date'],$data['to_date']]);
         return $geography;
+    }
+    public function vaccinations()
+    {
+        return $this->hasMany('App\Vaccination','geography_id');
     }
     
 }

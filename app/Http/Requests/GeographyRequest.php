@@ -28,7 +28,8 @@ class GeographyRequest extends FormRequest
             'type'            =>'required',
             'parent_id'       => 'required',
             'state'           => 'required',
-            'district'        => 'required'            
+            'district'        => 'required',
+            'block'           => 'required'            
         ];
     }
 }

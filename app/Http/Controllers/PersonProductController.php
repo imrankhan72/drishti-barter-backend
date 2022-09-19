@@ -89,8 +89,8 @@ class PersonProductController extends Controller
          $request['product_lp'] = $points;
       }        
       $pp = $this->repository->create($request->all());
-
-      sendSMS('New product '.$pp->product->name.' with quantity '.$pp->quantity_available.' '.$pp->unit->name.' has been added to your account by DM.',$person->mobile);   
+      $template_id = 1207161761333966067;
+      sendSMS('New product '.$pp->product->name.' with quantity '.$pp->quantity_available.' '.$pp->unit->name.' has been added to your account by DM.',$person->mobile,$template_id);   
       return response()->json($pp->load('person.personPersonalDetails','product.units'),201); 
      }else {
       return response()->json(['error'=>'Product Already Added'],406);
@@ -172,8 +172,8 @@ class PersonProductController extends Controller
          $request['product_lp'] = $points;
       }        
       $pp = $this->repository->update($request->all(),$id);
-
-      sendSMS('Product '.$pp->product->name.' with quantity '.$pp->quantity_available. ' ' .$pp->unit->name. ' has been updated.',$person->mobile);  
+      $template_id = 1207161761342757440;
+      sendSMS('Product '.$pp->product->name.' with quantity '.$pp->quantity_available. ' ' .$pp->unit->name. ' has been updated.',$person->mobile,$template_id);  
       return Response()->json($pp,201);
      // }else {
       // return response()->json(['error'=>'Product Already Added'],406);
@@ -279,7 +279,8 @@ class PersonProductController extends Controller
     * do get list of PersonProduct related to $person_id and $dm_id and with product.productCategory','product.units','unit','person.personPersonalDetails
     */
     public function getPersonProductList($dm_id,$person_id){
-        $PersonProduct = PersonProduct::where('person_id',$person_id)->where('dm_id',$dm_id)->get();
+      //  $PersonProduct = PersonProduct::where('person_id',$person_id)->where('dm_id',$dm_id)->get();
+        $PersonProduct = PersonProduct::where('person_id',$person_id)->get();
         
         $products = [];
         foreach ($PersonProduct as $pp) {

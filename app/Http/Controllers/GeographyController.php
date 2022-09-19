@@ -27,6 +27,43 @@ class GeographyController extends Controller
     {
         $this->repository = $repository;
     }
+    public function filterGeography(Request $request)
+    {
+        $geographies = Geography::orderBy('name')->with('DmGeography');
+        if(isset($request->name) && !empty($request->name)) 
+        {   
+            $geographies->where('name','like','%'.$request->name.'%');
+        }
+        if(isset($request->state) && !empty($request->state)) {
+            $geographies->where('state','like','%'.$request->state.'%');
+
+        }
+        if(isset($request->district) && !empty($request->district)) {
+            $geographies->where('district','like','%'.$request->district.'%');
+
+        }
+       // $geographies = $geographies->->get();
+        // $res = collect();
+        // foreach ($geographies as $geo) {
+        //      $geo->parent = Geography::find($geo->parent_id);
+        //      $res->push($geo); 
+        // }
+        if(isset($request['count']) && $request['count']) {
+            $geo = $geographies->get();
+            return response()->json(count($geo),200);
+        }
+        $offset = isset($request['skip']) ? $request['skip'] : 0 ;
+        $chunk = isset($request['skip']) ? $request['limit'] : 999999;
+        $geos = $geographies->skip($offset)->limit($chunk)->get();
+        $res = collect();
+        foreach ($geos as $geo) {
+             $geo->parent = Geography::find($geo->parent_id);
+             $geo->state_id = State::where('name',$geo->state)->first()->id;
+             $res->push($geo); 
+        }
+        return response()->json($res,200);
+        // return response()->json($res,200);
+    }
     public function index(Request $request)
     {
         $geographies = Geography::with('DmGeography');
@@ -117,8 +154,8 @@ class GeographyController extends Controller
      */
     public function update(Request $request, Geography $geography)
     {
-        $state= State::find($request['state']);
-        $request['state'] = $state->name;
+       $state= State::find($request['state']);
+      $request['state'] = $state->name;
         return response()->json($this->repository->update($request->all(), $geography->id), 201);
     }
 
@@ -459,5 +496,24 @@ class GeographyController extends Controller
         return response()->json($geography,200);
        }
        return response()->json(['error'=>'Geography_Not_Found'],404);
+    }
+    public function geographyAddInSuperAdmin()
+    {
+        $geographies = Geography::all();
+        foreach ($geographies as $geo) {
+            $users = User::where('is_super_admin',true)->get();
+            foreach ($users as $user) {
+                $temp['geography_id'] = $geo->id;
+                    $temp['geography_type'] = $geo->type;
+                    $temp['user_id'] = $user->id;
+                $ugs = UserGeography::where('user_id',$user->id)->where('geography_id',$geo->id)->get();
+              //  foreach ($ugs as $ug) {
+                  if(count($ugs) ==0 ) {
+                    UserGeography::create($temp);
+                    
+                }
+                
+            }
+        }
     }
 }

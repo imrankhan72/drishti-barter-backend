@@ -14,6 +14,7 @@
         "fideloper/proxy": "^4.0",
         "laravel/framework": "5.8.*",
         "laravel/tinker": "^1.0",
+        "matthewbdaly/laravel-azure-storage": "^1.6",
         "rap2hpoutre/fast-excel": "^2.0",
         "tymon/jwt-auth": "^1.0"
     },

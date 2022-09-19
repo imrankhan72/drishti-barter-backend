@@ -13,7 +13,9 @@ class Kernel extends ConsoleKernel
      * @var array
      */
     protected $commands = [
-        //
+        'App\Console\Commands\DashboardStatsUpdate',
+        'App\Console\Commands\UdyogiVaccinationStats'
+        
     ];
 
     /**
@@ -26,6 +28,9 @@ class Kernel extends ConsoleKernel
     {
         // $schedule->command('inspire')
         //          ->hourly();
+        $schedule->command('dashboard:stats')->daily();
+        $schedule->command('udyogi:stats')->dailyAt('01:00'); 
+        
     }
 
     /**

@@ -101,7 +101,7 @@ class TejasRequestSellToPeopleController extends Controller
         $trstp->createTejasSellLedgerTransactions('Success',$dm_ledger->id,'Cr',$total_lp,'SellToPerson Balance Credit',$dm_ledger->balance + $total_lp,$dm_person->id);
             
         $trstp->createTejasSellLedgerTransactions('Success',$person_ledger->id,'Dr',$total_lp,'SellToPerson Balance Debit',$person_ledger->balance - $total_lp,$person_id);
-        $trstp->createTejasSellLedgerTransactions('Success',$dm_ledger->id,'Cr',$dm_margin_lp,'SellToPerson Margin Add To DM',$dm_ledger->balance + $dm_margin_lp,$dm->id);
+        $trstp->createTejasSellLedgerTransactions('Success',$dm_ledger->id,'Cr',$dm_margin_lp,'SellToPerson Margin Add To DM',$dm_ledger->balance + $dm_margin_lp,$dm->person_id);
 
         $dm_ledger->balance = $dm_ledger->balance + $total_lp;
         $dm_ledger->save();
@@ -109,7 +109,8 @@ class TejasRequestSellToPeopleController extends Controller
         $person_ledger->save();
         $dm_ledger->balance = $dm_ledger->balance + $dm_margin_lp;
         $dm_ledger->save();
-        sendSMS("You have bought Tejas products worth ".$total_lp." from Drishtee Mitra. You account balance is ".$person_ledger->balance ,$person->mobile);
+        $template_id = 1207161761455914517;
+        sendSMS("You have bought Tejas products worth ".$total_lp." from Drishtee Mitra. You account balance is ".$person_ledger->balance ,$person->mobile,$template_id);
         return response()->json(['selltopersonrequest'=>$trstp,"products"=>$collection],200);  
     }
 

@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 
+
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -309,6 +310,8 @@ Route::get('report/product/export','DrishteeMitraController@reportProductsExport
 Route::get('report/service/export','DrishteeMitraController@reportServicesExport');
 Route::get('report/geographywiseledger/export','DrishteeMitraController@reportGeographyWiseLedgerExport');
 
+Route::get('report/personwithlp','PersonController@exportPersonWithLp');
+Route::get('report/personwithnolp','PersonController@exportPersonWithNoLp');
 Route::get('report/ledger/export','DrishteeMitraController@reportLedgerExport');
 Route::get('report/barter/export','DrishteeMitraController@reportBarterExport');
 Route::post('createadminfromexternalurl','UserController@storeUserFromExternal');
@@ -342,3 +345,53 @@ Route::resource('userproducts','UserProductController');
 Route::post('userproducts/report','UserProductController@report');
 Route::get('testpipeline','UserProductController@test'); // comment added
 
+Route::post('deletemitraexternal','DrishteeMitraController@deleteMitraExternal');
+Route::post('deleteuserexternal','UserController@deleteUserExternal');
+Route::post('barterdeleteforce/{id}','BarterController@deleteBarterForce')->middleware('jwt.auth');
+Route::post('userproductslog','UserProductController@sellProduct');
+
+Route::get('/getpersonfirst','DrishteeMitraController@personAddDate');
+Route::get('personadddate/{filepath}','DrishteeMitraController@downloadExportPersonAdd');
+Route::resource('vaccinations','VaccinationController');
+Route::post('filtervaccinations','VaccinationController@filterVaccination');
+Route::post('vaccinations/{id}/uploadcertificate','VaccinationController@uploadPDF');
+Route::post('vaccinations/{id}/uploadcertificatedose2','VaccinationController@uploadPDFDose2');
+
+Route::get('vaccinationstats','VaccinationController@vaccinationStats');
+Route::get('vaccinationstatsdmwise/{dm_id}','VaccinationController@vaccinationStatsDmWise');
+Route::resource('dashboardstats','DashboardStatsController');
+Route::get('getvaccinename','VaccinationController@getVaccineName');
+Route::get('personaddreport','PersonController@personRegistrationReport');
+Route::get('dmreportmonthwise/{filepath}','PersonController@dmReportMonthWise');
+Route::post('importcsp','DrishteeMitraController@importCsp');
+Route::post('vaccination/statuschange/{id}','VaccinationController@statusChange');
+Route::get('commisionreport','DrishteeMitraController@comissionMonthlyReport');
+Route::get('comissionreportmonthwise/{filepath}','DrishteeMitraController@comissionReportMonthWise');
+
+Route::post('filterusers','UserController@filterUser');
+Route::get('geoassign','GeographyController@geographyAddInSuperAdmin');
+Route::post('filtergeography','GeographyController@filterGeography');
+
+Route::get('getdmvaccinations/{dm_id}','VaccinationController@getVaccinationByDm');
+Route::get('personupdatescript','PersonController@updateScript');
+Route::post('dmmobileupdate','DrishteeMitraController@mobileUpdate');
+
+Route::get('getvaccinestats','VaccinationController@getpersonsByVaccineDose');
+Route::get('getvaccinedm/{flag}','VaccinationController@getVaccinePeopleByDMFlage');
+
+Route::get('getvaccinelist','VaccinationController@getVaccinationList');
+Route::get('vaccination/list/report','DrishteeMitraController@vaccinationListReport');
+Route::get('dateassign','VaccinationController@dateAssign');
+Route::get('getbankdetails','PersonController@updatebankdetails');
+Route::get('cspconvert','DrishteeMitraController@cspconvert');
+Route::get('updatebankdetails','PersonController@updatebankdetails');
+Route::get('producerlist','PersonController@producerList');
+Route::post('uploadpersoncertificate/{id}','PersonController@uploadVaccinationFile');
+Route::get('allmitra','DrishteeMitraController@allMitra');
+Route::get('correctledger','DrishteeMitraController@correctLedgerId');
+Route::get('correctledgerbal','DrishteeMitraController@ledgerCorrect');
+Route::get('apifortarun','DrishteeMitraController@dataForTarun');
+Route::get('udyogidata','DrishteeMitraController@getUdyogiVaccinationData');
+Route::get('vaccinationstatsexternal','VaccinationController@vaccinationStatsExternal');
+Route::get('reportkbsingh','PersonController@reportFromFirstJantoThirdMarch');
+Route::get('barterapiexternal','BarterController@barterApiForTarun');

@@ -285,8 +285,31 @@ class ProductController extends Controller
      */
     public function exportProducts(){
         $products = Product::all();
+        $res = collect();
+        $c = 1;
+        foreach ($products as $product) {
+            // 'name','default_livehood_points','product_category_id','calc_raw_material_cost','calc_hours_worked','calc_wage_applicable','calc_margin_applicable','added_by_user_id','is_gold_product','is_branded_product','mrp','availability','approved_by','is_approved','photo_path','photo_name','approved_at','unit_id'\
+          $temp['sl_no'] = $c++;
+          $temp['name'] = $product->name;
+          $temp['category'] = ($product->productCategory && $product->productCategory)? $product->productCategory->name:'';
+
+          $temp['default_livehood_points'] =$product->default_livehood_points;
+          $temp['calc_raw_material_cost'] =  $product->calc_raw_material_cost;
+
+          $temp['calc_hours_worked'] = $product->calc_hours_worked;
+          $temp['calc_wage_applicable'] = $product->calc_wage_applicable;
+
+          $temp['calc_margin_applicable'] = $product->calc_margin_applicable;
+
+          $temp['is_gold_product'] = $product->is_gold_product;
+          // $temp['category'] = $product->productCategory->name;
+          $temp['mrp'] = $product->mrp;
+          $res->push($temp);
+          $temp = null;
+        }
+
         $file = Carbon::now()->format('YmdHis').'products.xlsx';
-        $filepath = (new FastExcel($products))->export(storage_path().'/'.$file);
+        $filepath = (new FastExcel($res))->export(storage_path().'/'.$file);
         $url = "api/productsexport/".$file;
         return response()->json(url($url),200);
     }
@@ -376,9 +399,12 @@ class ProductController extends Controller
        $filename = pathinfo($file, PATHINFO_FILENAME);
        $originalName = $filename.'.'.$extension; 
        $cover = $request->file('file');
-       Storage::disk('public')->put($originalName,File::get($cover));
+      // Storage::disk('public')->put($originalName,File::get($cover));
+       $filePath = $request->file('file')->storeAs('databackup/', $originalName, 'azure');
+      
        $request['photo_name'] = $originalName;
-       $request['photo_path'] = Storage::disk('public')->url($originalName);
+      // $request['photo_path'] = Storage::disk('public')->url($originalName);
+        $request['photo_path'] = 'https://drishteedatastore.blob.core.windows.net/drishtee/databackup/'.$originalName;
        $pc->update($request->only(['photo_name','photo_path']));
        return response()->json($pc,201); 
     }

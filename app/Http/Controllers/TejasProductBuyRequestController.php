@@ -20,6 +20,7 @@ use App\Mail\TejasBuyFromDrishteeMail;
 use App\UserGeography;
 use App\User;
 use App\UserProduct;
+use App\UserProductLog;
 
 class TejasProductBuyRequestController extends Controller
 {
@@ -143,10 +144,10 @@ class TejasProductBuyRequestController extends Controller
         $users =  User::whereHas('userGeographies', function ($query) use ( $dm_geography) {
             $query->where('geography_id', '=', $dm_geography->geography_id);
         })->where("is_super_admin",1)->get();
-
+        $template_id = 1207161761372278111;
         foreach ($users as $user) {
                 // Mail::to($user->email)->send(new TejasBuyFromDrishteeMail($user));
-                sendSMS('You have received a new Tejas Product Buy Request. Please login to admin panel to process.', $user->mobile);
+                sendSMS('You have received a new Tejas Product Buy Request. Please login to admin panel to process.', $user->mobile,$template_id);
         }
         return response()->json(["res" => $resarray, "tejas" => $tpbr], 200);
     }
@@ -224,6 +225,15 @@ class TejasProductBuyRequestController extends Controller
                   
                 $up->quantity_available = $up->quantity_available - $key->quantity;
                 $up->save();
+
+                    $temp['user_product_id'] = $up->id;
+                    $temp['product_id'] = $up->product_id;
+                    $temp['quantity'] = $key->quantity;
+                    $temp['product_lp'] = $up->product_lp;
+                    $temp['message'] = $key->quantity.' Quantity Decrease By From Inventory'; 
+                    $upl = UserProductLog::create($temp);
+
+
                 $pp = PersonProduct::where('person_id', $dm_person->id)->where('product_id', $key->product_id)->first();
                 if ($pp == null) {
                     
@@ -242,10 +252,14 @@ class TejasProductBuyRequestController extends Controller
                     $pp->product_lp = (($lp) ? $lp : $product->default_livehood_points);
                     $pp->active_on_barterplace = true;
                     $pp->save();
+
+                    
                 } else {
                     $total_lp += $pp->product_lp;
                     $pp->quantity_available = $pp->quantity_available + $key->quantity;
                     $pp->save();
+
+                   
                 }
                 
             }
