@@ -179,7 +179,7 @@ return [
 
         LaravelFCM\FCMServiceProvider::class,
         Matthewbdaly\LaravelAzureStorage\AzureStorageServiceProvider::class,
-
+        Rap2hpoutre\LaravelLogViewer\LaravelLogViewerServiceProvider::class,
 
     ],
 
