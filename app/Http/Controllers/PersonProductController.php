@@ -263,12 +263,13 @@ class PersonProductController extends Controller
     }
 
     /**
-    * @param  \App\DrishteeMitra $dm_id
-    * @return \App\Person $persons
-    * do get list of Person with personPersonalDetails
+    1) Its currently getting list of all persons attached to DM via dm_id
+    2) Get all persons from a given geography_id
     */
     public function getPersonList($dm_id){
-      $persons = Person::where('dm_id',$dm_id)->get();
+        $mitra = DrishteeMitra::find($dm_id);
+        $persons = Person::where('geography_id',$mitra->person->geography_id)->get();
+      //$persons = Person::where('dm_id',$dm_id)->get();
       return response()->json($persons->load('personPersonalDetails'),200); 
     }
 
