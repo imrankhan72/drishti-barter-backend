@@ -255,7 +255,7 @@ class TejasProductBuyRequestController extends Controller
 
                     
                 } else {
-                    $total_lp += $pp->product_lp;
+                    $total_lp += $pp->product_lp*$key->quantity;
                     $pp->quantity_available = $pp->quantity_available + $key->quantity;
                     $pp->save();
 
