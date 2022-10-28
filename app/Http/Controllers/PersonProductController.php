@@ -1,4 +1,5 @@
 <?php
+// last deployed:28th oct
 
 namespace App\Http\Controllers;
 
@@ -216,7 +217,8 @@ class PersonProductController extends Controller
     * do get list of PersonProduct
     */
     public function personProductGet($person_id){
-      $pp = PersonProduct::where('person_id',$person_id)->get();
+     // $pp = PersonProduct::where('person_id',$person_id)->get();
+         $pp = PersonProduct::where('person_id',$person_id)->where('quantity_available', '>', 0)->get();
       $res = collect();
       foreach ($pp as $p) {
         $p->name = $p->product && $p->product->name ? $p->product->name : null;
