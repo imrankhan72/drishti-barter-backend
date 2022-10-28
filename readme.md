@@ -1,11 +1,11 @@
-##Go to controllers directory
-cd app/Http/Controllers/
-##Rename file 
-mv PersonProductController.php PersonProductController_old.php
-##Download new file 
-wget https://raw.githubusercontent.com/imrankhan72/drishti-barter-backend/master/app/Http/Controllers/PersonProductController.php
-##Delete old file
-rm PersonProductController_old.php
+##Go to controllers directory <br/>
+cd app/Http/Controllers/  <br/>
+##Rename file  <br/>
+mv PersonProductController.php PersonProductController_old.php  <br/>
+##Download new file  <br/>
+wget https://raw.githubusercontent.com/imrankhan72/drishti-barter-backend/master/app/Http/Controllers/PersonProductController.php  <br/>
+##Delete old file  <br/>
+rm PersonProductController_old.php  <br/>
 ##Show git remote repository URL
 1) git remote -v
 2) git remote show origin
