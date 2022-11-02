@@ -461,6 +461,7 @@ public function reportBarterExport(Request $request){
             'Date'  =>$dateArray['day'],
             "Mitra"=>(($key->drisheeMitras) ? ($key->drisheeMitras->first_name.' '.$key->drisheeMitras->last_name): ""),
             "Geography"=>$key->geography->name,
+            "District"=> (($key->person && $key->person->district) ?  ($key->person->district): ""),
             "State"=> (($key->person && $key->person->state) ?  ($key->person->state): ""),
             "Barter Person"=> (($key->person) ? ( $key->person->first_name.' '.$key->person->last_name): ""),
             "Status" => $key->status,
