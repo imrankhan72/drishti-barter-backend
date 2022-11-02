@@ -80,26 +80,31 @@ class Product extends Model
    * @return \App\Product $product
    * do filter Product depend upon name, product_category, created_at
    */
-  public static function filterProducts($request)
+public static function filterProducts($request)
     {
+        if(isset($request['skip']) && $request['limit']) {
+            $products = Product::where('deleted_at','=',null)->skip($request['skip'])->take($request['limit'])->with('productCategory')->with('personProduct')
+                ->with('approvedBy')->with('units')->with('productAlias')->with('userAdded')->with('geographyProduct')->orderBy('name')->get();
+        }else{
+            $products = Product::where('deleted_at','=',null)->with('productCategory')->with('personProduct')
+                ->with('approvedBy')->with('units')->with('productAlias')->with('userAdded')->with('geographyProduct')->orderBy('name')->get();
+        }
 
-     // $products = Product::all();     
-     $products = DB::table('products')->where('deleted_at','=',null)->orderBy('name');
       if(isset($request['filters'])) {
         $filters = $request['filters'];
         foreach($filters as $key => $value) {
-         
+
           if($key == 'name'){
                         $products = $products->where($key,'like','%'.$value.'%');
-                    
+
            }
            else if($key == 'is_gold_product'){
                         $products = $products->where($key,$value);
-                    
+
            }
           else if($key == 'product_category_id' || $key == 'added_by_user_id' || $key == 'unit_id' || $key == 'salutation_id') {
                     if(in_array('--', $value)) {
-                        $products = $products->whereNull($key);   
+                        $products = $products->whereNull($key);
                     }
                     else {
                         $products = $products->whereIn($key, $value);
@@ -112,56 +117,35 @@ class Product extends Model
                         $products = $products->whereBetween($key, array($start_date, $end_date));
                     }
           }
-        
+
         }
       }
-        
-        // if(isset($request['sort_by'])) {
-        //   $products =$products->orderBy('is_gold_product','ASC');
-        // }
-    
+
         if(isset($request['count']) && $request['count']) {
             $products = $products->get();
             return count($products);
         }
-       // $products->orderBy('name');
-      $offset = isset($request['skip']) ? $request['skip'] : 0 ;
-      $chunk = isset($request['skip']) ? $request['limit'] : 999999;
-        // $products = $products->orderBy('is_gold_product','ASC');
-       // return $products->get();
-       $products = $products->skip($offset)->limit($chunk)->get();
+
+       return $products;
 
         $productsCollection = collect();
-        // foreach($products as $product) {
 
-        //     $c = Product::find($product->id);
-        //     if($c){
-        //     $c->load('productCategory','personProduct','approvedBy','units','productAlias','userAdded','geographyProduct');
-        //     if($product->is_gold_product){
-        //     $productsCollection->push($c);
-        //     }
-        //   }
-        // }
-        // $tproducts = DB::table('products')->where('is_gold_product',true)
-        foreach ($products as $p) {
-          $cd = Product::find($p->id);
-          if($request['geo_id'] && $cd->is_gold_product){
-            $lp = $cd->geoDefaultLivehoodPoints($request['geo_id']);
-            if($lp){
-              $cd->default_livehood_points = $lp;
-            }
-          }
-          if($cd){
-            $cd->load('productCategory','personProduct','approvedBy','units','productAlias','userAdded','geographyProduct');
-           // if(!$p->is_gold_product){
-            $productsCollection->push($cd);
-           // } 
-          }
-        }
-       // // $res = $productsCollection->sortBy('is_gold_product');
-       //  $res = $productsCollection;
+//        foreach ($products as $p) {
+//          $cd = Product::find($p->id);
+//          if($request['geo_id'] && $cd->is_gold_product){
+//            $lp = $cd->geoDefaultLivehoodPoints($request['geo_id']);
+//            if($lp){
+//              $cd->default_livehood_points = $lp;
+//            }
+//          }
+//          if($cd){
+//            $cd->load('productCategory','personProduct','approvedBy','units','productAlias','userAdded','geographyProduct');
+//           // if(!$p->is_gold_product){
+//            $productsCollection->push($cd);
+//           // }
+//          }
+//        }
       return $productsCollection;
-      // $temptejs 
     }
     public static function getTejasProduct($data)
     {
